@@ -10,6 +10,9 @@
   --color-ink-700: #161a2e;
   --color-accent: #7aa2ff;
   --color-accent-soft: #a9c0ff;
+  --font-mono:
+    ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Consolas,
+    'Liberation Mono', monospace;
 }
 
 html,
@@ -58,5 +61,51 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up {
     animation: none;
+  }
+}
+
+/*
+ * Full-viewport section scrolling.
+ *
+ * Mandatory snapping is great on a desktop viewport but fights the user on
+ * phones (URL bar resizing, sections taller than the viewport), so snapping
+ * stays "proximity" until there is room for it.
+ */
+.scroll-area {
+  scroll-snap-type: y proximity;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+}
+
+@media (min-width: 768px) {
+  .scroll-area {
+    scroll-snap-type: y mandatory;
+  }
+}
+
+.snap-section {
+  scroll-snap-align: start;
+}
+
+.scroll-area::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+}
+
+.scroll-area::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-area {
+    scroll-behavior: auto;
   }
 }
