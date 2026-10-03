@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import LineField from '../components/LineField'
+import FactoryField from '../components/FactoryField'
 import GoogleIcon from '../components/GoogleIcon'
 import LanguageToggle from '../components/LanguageToggle'
 import LocalClock from '../components/LocalClock'
@@ -111,7 +111,7 @@ export default function Landing() {
         the scroll feels like one continuous space rather than five slides.
       */}
       <div className="pointer-events-none fixed inset-0 z-0">
-        <LineField density={1.1} />
+        <FactoryField density={1.1} />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(4,5,10,0.72)_0%,rgba(4,5,10,0.35)_45%,rgba(4,5,10,0.9)_100%)]" />
       </div>
 
