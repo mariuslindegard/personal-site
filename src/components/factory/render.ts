@@ -1,16 +1,11 @@
+import { clamp, pointOnPolyline, type Pt } from './geometry'
 import {
-  PRODUCE_MS,
-  PULSE_MS,
-  PRODUCT_LETTERS,
-  TIER_RGB,
-  type Ambient,
-  type Factory,
-  type Link,
-  type Pulse,
-} from './model'
-import { clamp, pointAtDistance, radiusOf, type Pt } from './geometry'
-
-const ACCENT_RGB: [number, number, number] = [122, 162, 255]
+  BUILDINGS,
+  MATERIAL_RGB,
+  ROADS,
+  VEHICLES,
+} from './config'
+import type { Ambient, Building, Particle, Pulse, RoadSegment, Vehicle, World } from './types'
 
 function rgba(rgb: [number, number, number], alpha: number): string {
   return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha})`
@@ -42,174 +37,246 @@ function roundRect(
   g.closePath()
 }
 
-function strokePolyline(g: CanvasRenderingContext2D, pts: Pt[]) {
+function strokePath(g: CanvasRenderingContext2D, pts: Pt[]) {
   g.beginPath()
   g.moveTo(pts[0].x, pts[0].y)
-  for (let i = 1; i < pts.length; i++) {
-    g.lineTo(pts[i].x, pts[i].y)
-  }
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y)
   g.stroke()
 }
 
-export function drawLink(
-  g: CanvasRenderingContext2D,
-  link: Link,
-  fromTier: number,
-  progress: number,
-  alphaMul: number,
-) {
-  const distance = link.curve.length * progress
-  const pts: Pt[] = []
-  for (let i = 0; i < link.curve.samples.length; i++) {
-    if (link.curve.cum[i] > distance) break
-    pts.push(link.curve.samples[i])
+function drawSegment(g: CanvasRenderingContext2D, segment: RoadSegment) {
+  const def = ROADS[segment.tier] ?? ROADS[1]
+  const a = segment.pts[0]
+  const b = segment.pts[1]
+  if (segment.demolish && segment.built) {
+    g.setLineDash([2, 4])
+    g.strokeStyle = 'rgba(255, 140, 130, 0.8)'
+    g.lineWidth = def.width
+    strokePath(g, segment.pts)
+    g.setLineDash([])
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+    g.beginPath()
+    g.arc(mid.x, mid.y, 3, 0, Math.PI * 2)
+    g.strokeStyle = 'rgba(255, 140, 130, 0.9)'
+    g.lineWidth = 1
+    g.stroke()
+    return
   }
-  pts.push(pointAtDistance(link.curve, distance))
-  if (pts.length < 2) return
-
-  const rgb = TIER_RGB[fromTier] ?? TIER_RGB[0]
-  g.lineCap = 'round'
-  g.lineJoin = 'round'
-
-  g.strokeStyle = rgba(rgb, 0.055 * alphaMul)
-  g.lineWidth = 4.6
-  strokePolyline(g, pts)
-
-  g.strokeStyle = rgba(rgb, 0.2 * alphaMul)
-  g.lineWidth = 1.2
-  strokePolyline(g, pts)
-
-  g.strokeStyle = `rgba(255, 255, 255, ${0.05 * alphaMul})`
-  g.lineWidth = 0.6
-  strokePolyline(g, pts)
+  if (segment.built) {
+    g.lineCap = 'round'
+    g.lineJoin = 'round'
+    g.strokeStyle = rgba(def.rgb, 0.16)
+    g.lineWidth = def.width + 3.4
+    strokePath(g, segment.pts)
+    g.strokeStyle = rgba(def.rgb, 0.85)
+    g.lineWidth = def.width
+    strokePath(g, segment.pts)
+    if (segment.tier === 3) {
+      g.setLineDash([7, 7])
+      g.strokeStyle = rgba(lighten(def.rgb, 50), 0.8)
+      g.lineWidth = 0.9
+      strokePath(g, segment.pts)
+      g.setLineDash([])
+    }
+  } else {
+    g.setLineDash([3, 5])
+    g.strokeStyle = rgba(def.rgb, 0.3)
+    g.lineWidth = 1.1
+    strokePath(g, segment.pts)
+    g.setLineDash([])
+    if (segment.progress > 0) {
+      const tip = pointOnPolyline(
+        segment.pts,
+        segment.cum,
+        segment.progress * segment.length,
+      )
+      g.lineCap = 'round'
+      g.strokeStyle = rgba(lighten(def.rgb, 30), 0.9)
+      g.lineWidth = def.width
+      strokePath(g, [a, tip])
+    }
+    void b
+  }
 }
 
-export function drawFactory(
+export function drawRoads(g: CanvasRenderingContext2D, world: World) {
+  for (const segment of world.segments) {
+    drawSegment(g, segment)
+  }
+}
+
+export function drawJunctions(
   g: CanvasRenderingContext2D,
-  factory: Factory,
+  world: World,
   now: number,
 ) {
-  const r = radiusOf(factory.tier)
-  const rgb = TIER_RGB[factory.tier] ?? TIER_RGB[0]
-  const soft = lighten(rgb, 46)
-  const half = r * 0.975
-
-  if (factory.pulse > 0) {
-    const expand = (1 - factory.pulse) * r * 2.1
+  for (const node of world.nodes) {
+    if (node.segments.length < 2 || node.kind === 'building') continue
     g.beginPath()
-    g.arc(factory.pos.x, factory.pos.y, r + expand, 0, Math.PI * 2)
-    g.strokeStyle = rgba(rgb, factory.pulse ** 1.5 * 0.5)
+    g.arc(node.pos.x, node.pos.y, 2.1, 0, Math.PI * 2)
+    g.fillStyle = 'rgba(150, 165, 190, 0.5)'
+    g.fill()
+    if (node.signal) {
+      const blink = 0.5 + 0.5 * Math.sin(now * 0.004)
+      g.beginPath()
+      g.arc(node.pos.x, node.pos.y, 3.2, 0, Math.PI * 2)
+      g.fillStyle = `rgba(120, 255, 170, ${0.55 + blink * 0.4})`
+      g.fill()
+    }
+  }
+}
+
+function drawBuilding(g: CanvasRenderingContext2D, building: Building) {
+  const def = BUILDINGS[building.key]
+  if (!def) return
+  const size = def.size
+  const half = size / 2
+  const rgb = def.rgb
+
+  if (building.pulse > 0) {
+    g.beginPath()
+    g.arc(building.pos.x, building.pos.y, half + 3 + (1 - building.pulse) * half, 0, Math.PI * 2)
+    g.strokeStyle = rgba(rgb, building.pulse * 0.5)
     g.lineWidth = 1.1
     g.stroke()
   }
 
-  roundRect(
-    g,
-    factory.pos.x - half,
-    factory.pos.y - half,
-    half * 2,
-    half * 2,
-    half * 0.46,
-  )
-  g.fillStyle = 'rgba(6, 8, 16, 0.8)'
+  roundRect(g, building.pos.x - half, building.pos.y - half, size, size, half * 0.34)
+  g.fillStyle = 'rgba(7, 9, 18, 0.82)'
   g.fill()
-  g.strokeStyle = rgba(rgb, 0.1)
-  g.lineWidth = 3.6
-  g.stroke()
-  g.strokeStyle = rgba(rgb, 0.5)
-  g.lineWidth = 1.05
-  g.stroke()
 
-  if (factory.output === null) {
-    g.beginPath()
-    g.setLineDash([3, 5])
-    g.arc(factory.pos.x, factory.pos.y, half + 5.5, 0, Math.PI * 2)
-    g.strokeStyle = rgba(rgb, 0.22)
-    g.lineWidth = 1
+  if (building.state === 'site') {
+    g.setLineDash([3, 4])
+    g.strokeStyle = rgba(rgb, 0.85)
+    g.lineWidth = 1.3
     g.stroke()
     g.setLineDash([])
-  }
-
-  for (const slot of [0, 1]) {
-    const connected = factory.inputs[slot] !== null
-    const buffered = factory.arrivals[slot] > 0
-    const inputRgb = TIER_RGB[Math.max(0, factory.tier - 1)]
-    const start = slot === 0 ? Math.PI * 0.78 : -Math.PI * 0.22
-    g.beginPath()
-    g.arc(factory.pos.x, factory.pos.y, half + 1.6, start, start + Math.PI * 0.44)
-    g.strokeStyle = connected
-      ? rgba(inputRgb, buffered ? 0.95 : 0.5)
-      : 'rgba(255, 255, 255, 0.13)'
-    g.lineWidth = connected && buffered ? 2.4 : 2
+    const done = 1 - building.work / Math.max(1, building.workRequired)
+    if (done > 0) {
+      g.save()
+      roundRect(g, building.pos.x - half, building.pos.y - half, size, size, half * 0.34)
+      g.clip()
+      g.fillStyle = rgba(rgb, 0.34)
+      g.fillRect(building.pos.x - half, building.pos.y + half - size * done, size, size * done)
+      g.restore()
+    }
+    for (let i = 0; i < 3; i++) {
+      const y = building.pos.y + half - size * done * ((i + 1) / 3)
+      g.beginPath()
+      g.moveTo(building.pos.x - half - 2, y)
+      g.lineTo(building.pos.x + half + 2, y)
+      g.strokeStyle = rgba(rgb, 0.42)
+      g.lineWidth = 0.9
+      g.stroke()
+    }
+  } else {
+    g.strokeStyle = rgba(rgb, 0.12)
+    g.lineWidth = 3.4
     g.stroke()
-  }
-
-  if (factory.produceAt !== 0) {
-    const progress = 1 - clamp((factory.produceAt - now) / PRODUCE_MS, 0, 1)
-    g.beginPath()
-    g.arc(
-      factory.pos.x,
-      factory.pos.y,
-      half + 4,
-      -Math.PI / 2,
-      -Math.PI / 2 + progress * Math.PI * 2,
-    )
-    g.strokeStyle = rgba(soft, 0.8)
-    g.lineWidth = 1.6
+    g.strokeStyle = rgba(rgb, 0.75)
+    g.lineWidth = 1.1
     g.stroke()
-  }
 
-  g.font = `600 ${Math.round(r * 1.02)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
-  g.textAlign = 'center'
-  g.textBaseline = 'middle'
-  g.fillStyle = rgba(soft, 0.92)
-  g.fillText(PRODUCT_LETTERS[factory.tier] ?? '?', factory.pos.x, factory.pos.y + 0.5)
+    g.font = `600 ${Math.round(size * 0.5)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
+    g.textAlign = 'center'
+    g.textBaseline = 'middle'
+    g.fillStyle = rgba(lighten(rgb, 45), 0.95)
+    g.fillText(def.glyph, building.pos.x, building.pos.y + 0.5)
 
-  if (factory.output) {
-    const start = factory.output.curve.samples[0]
-    g.beginPath()
-    g.arc(start.x, start.y, 4.4, 0, Math.PI * 2)
-    g.fillStyle = rgba(rgb, 0.18)
-    g.fill()
-    g.beginPath()
-    g.arc(start.x, start.y, 1.9, 0, Math.PI * 2)
-    g.fillStyle = rgba(soft, 0.9)
-    g.fill()
+    const recipe = def.recipe
+    if (recipe) {
+      let x = building.pos.x - half + 3
+      for (const input of recipe.inputs) {
+        const ready = (building.inputs[input.mat] ?? 0) >= input.qty
+        g.fillStyle = ready
+          ? rgba(MATERIAL_RGB[input.mat], 0.95)
+          : rgba(MATERIAL_RGB[input.mat], 0.25)
+        g.fillRect(x, building.pos.y - half - 4.5, 2.6, 2.6)
+        x += 4
+      }
+      if (recipe.output) {
+        const amt = building.output[recipe.output.mat] ?? 0
+        g.fillStyle = rgba(MATERIAL_RGB[recipe.output.mat], amt > 0 ? 0.95 : 0.25)
+        g.fillRect(building.pos.x + half - 5.6, building.pos.y - half - 4.5, 2.6, 2.6)
+      }
+      if (recipe.addsProgress) {
+        const p = building.progress / 3
+        g.fillStyle = rgba(rgb, 0.9)
+        g.fillRect(building.pos.x - half, building.pos.y + half + 3, size * clamp(p, 0, 1), 1.6)
+      }
+    }
   }
 }
 
-export function drawProduct(
-  g: CanvasRenderingContext2D,
-  link: Link,
-  at: number,
-  fromTier: number,
-) {
-  const rgb = TIER_RGB[fromTier] ?? TIER_RGB[0]
-  const soft = lighten(rgb, 60)
-  const head = pointAtDistance(link.curve, at)
-  const p1 = pointAtDistance(link.curve, at - 21)
-  const p2 = pointAtDistance(link.curve, at - 14)
-  const p3 = pointAtDistance(link.curve, at - 7)
+export function drawBuildings(g: CanvasRenderingContext2D, world: World) {
+  for (const building of world.buildings) drawBuilding(g, building)
+}
 
-  g.lineCap = 'round'
-  g.beginPath()
-  g.moveTo(p1.x, p1.y)
-  g.lineTo(p2.x, p2.y)
-  g.lineTo(p3.x, p3.y)
-  g.lineTo(head.x, head.y)
-  g.strokeStyle = rgba(rgb, 0.45)
-  g.lineWidth = 1.5
+function drawVehicle(g: CanvasRenderingContext2D, vehicle: Vehicle) {
+  const isBuilder = vehicle.role === 'builder'
+  const def = VEHICLES[clamp(vehicle.tier, 1, VEHICLES.length) - 1]
+  const rgb = isBuilder ? ([240, 220, 150] as [number, number, number]) : def.rgb
+  const size = isBuilder ? 8 : def.size
+  const bodyLen = size * 1.5
+  const bodyWid = size * 0.9
+
+  g.save()
+  g.translate(vehicle.pos.x, vehicle.pos.y)
+  g.rotate(vehicle.angle)
+  roundRect(g, -bodyLen / 2, -bodyWid / 2, bodyLen, bodyWid, bodyWid * 0.32)
+  g.fillStyle = 'rgba(8, 10, 18, 0.9)'
+  g.fill()
+  g.strokeStyle = isBuilder ? rgba(rgb, 0.9) : rgba(rgb, 0.8)
+  g.lineWidth = 1
+  if (isBuilder) g.setLineDash([2, 2])
   g.stroke()
+  g.setLineDash([])
 
-  g.beginPath()
-  g.arc(head.x, head.y, 3.6, 0, Math.PI * 2)
-  g.fillStyle = rgba(rgb, 0.22)
-  g.fill()
+  if (isBuilder) {
+    g.beginPath()
+    g.moveTo(-bodyLen * 0.25, -bodyWid * 0.4)
+    g.lineTo(bodyLen * 0.25, 0)
+    g.lineTo(-bodyLen * 0.25, bodyWid * 0.4)
+    g.closePath()
+    g.fillStyle = rgba(rgb, 0.8)
+    g.fill()
+  } else {
+    const slots = def.capacity
+    const cargo = vehicle.cargo.reduce((n, item) => n + item.qty, 0)
+    const cargoMat = vehicle.cargo[0]?.mat ?? 0
+    const slotW = Math.min(2.6, (bodyLen - 4) / slots)
+    const startX = -bodyLen / 2 + 1.6
+    for (let i = 0; i < slots; i++) {
+      const filled = i < cargo
+      g.fillStyle = filled ? rgba(MATERIAL_RGB[cargoMat], 0.95) : rgba(rgb, 0.2)
+      g.fillRect(startX + i * (slotW + 0.6), -bodyWid / 2 + 1.4, slotW, bodyWid - 2.8)
+    }
+  }
+  g.restore()
+}
 
-  g.beginPath()
-  g.arc(head.x, head.y, 1.9, 0, Math.PI * 2)
-  g.fillStyle = rgba(soft, 0.95)
-  g.fill()
+export function drawVehicles(g: CanvasRenderingContext2D, world: World) {
+  for (const vehicle of world.vehicles) drawVehicle(g, vehicle)
+}
+
+export function drawPulses(g: CanvasRenderingContext2D, pulses: Pulse[]) {
+  for (const pulse of pulses) {
+    const k = pulse.t / 1050
+    if (k < 0 || k > 1) continue
+    g.beginPath()
+    g.arc(pulse.x, pulse.y, pulse.r + k * pulse.max, 0, Math.PI * 2)
+    g.strokeStyle = rgba(pulse.rgb, (1 - k) ** 1.7 * 0.5 * pulse.width)
+    g.lineWidth = pulse.width
+    g.stroke()
+  }
+}
+
+export function drawParticles(g: CanvasRenderingContext2D, particles: Particle[]) {
+  for (const particle of particles) {
+    const k = particle.life / particle.max
+    g.fillStyle = rgba(particle.rgb, (1 - k) * 0.9)
+    g.fillRect(particle.x, particle.y, particle.size, particle.size)
+  }
 }
 
 export function drawAmbient(g: CanvasRenderingContext2D, particles: Ambient[]) {
@@ -218,20 +285,17 @@ export function drawAmbient(g: CanvasRenderingContext2D, particles: Ambient[]) {
     const trail = particle.trail
     const len = trail.length / 2
     if (len < 3) continue
-
     const headX = trail[trail.length - 2]
     const headY = trail[trail.length - 1]
     const tailX = trail[0]
     const tailY = trail[1]
     const fadeIn = Math.min(1, particle.life / 140)
-    const alpha = 0.33 * particle.brightness * fadeIn
+    const alpha = 0.3 * particle.brightness * fadeIn
     if (alpha <= 0.01) continue
-
     const gradient = g.createLinearGradient(tailX, tailY, headX, headY)
-    gradient.addColorStop(0, rgba(ACCENT_RGB, 0))
-    gradient.addColorStop(0.6, rgba(ACCENT_RGB, alpha * 0.3))
+    gradient.addColorStop(0, 'rgba(122, 162, 255, 0)')
+    gradient.addColorStop(0.6, `rgba(122, 162, 255, ${alpha * 0.3})`)
     gradient.addColorStop(1, `rgba(198, 218, 255, ${alpha})`)
-
     g.beginPath()
     g.moveTo(tailX, tailY)
     for (let i = 1; i < len - 1; i++) {
@@ -243,25 +307,9 @@ export function drawAmbient(g: CanvasRenderingContext2D, particles: Ambient[]) {
     }
     g.lineTo(headX, headY)
     g.strokeStyle = gradient
-    g.lineWidth = 1.15
+    g.lineWidth = 1.1
     g.stroke()
-
-    g.beginPath()
-    g.arc(headX, headY, 1.1, 0, Math.PI * 2)
-    g.fillStyle = `rgba(215, 230, 255, ${alpha * 0.9})`
-    g.fill()
   }
-}
-
-export function drawPulse(g: CanvasRenderingContext2D, pulse: Pulse) {
-  const k = pulse.t / PULSE_MS
-  if (k < 0 || k > 1) return
-  const rgb = TIER_RGB[pulse.hue] ?? TIER_RGB[0]
-  g.beginPath()
-  g.arc(pulse.x, pulse.y, pulse.r + k * pulse.max, 0, Math.PI * 2)
-  g.strokeStyle = rgba(rgb, (1 - k) ** 1.7 * 0.5 * pulse.width)
-  g.lineWidth = pulse.width
-  g.stroke()
 }
 
 export function drawDissolve(g: CanvasRenderingContext2D, alpha: number) {

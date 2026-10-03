@@ -1,39 +1,28 @@
 import { useEffect, useRef } from 'react'
+import { mulberry32 } from './factory/geometry'
 import {
-  DISSOLVE_MS,
-  PLACE_DELAY,
-  buildAmbient,
   buildStatic,
   createWorld,
-  maybeSpawnTop,
-  processTask,
+  dissolveFinished,
   resetWorld,
-  stepFactories,
-  updateAmbient,
-  updateLinks,
-  updateProducts,
-  updatePulses,
-  type World,
-} from './factory/model'
-import { anchorFor, type Env } from './factory/layout'
-import { clamp, mulberry32 } from './factory/geometry'
+  stepWorld,
+} from './factory/sim'
+import type { Env, World } from './factory/types'
 import {
   drawAmbient,
+  drawBuildings,
   drawDissolve,
-  drawFactory,
-  drawLink,
-  drawProduct,
-  drawPulse,
+  drawJunctions,
+  drawParticles,
+  drawPulses,
+  drawRoads,
+  drawVehicles,
 } from './factory/render'
 
 type Props = {
   density?: number
   className?: string
 }
-
-const MAX_TIER_WIDE = 6
-const MAX_TIER_NARROW = 5
-const STATIC_TIER = 3
 
 export default function FactoryField({ density = 1, className }: Props) {
   const structRef = useRef<HTMLCanvasElement | null>(null)
@@ -55,54 +44,42 @@ export default function FactoryField({ density = 1, className }: Props) {
     let width = 0
     let height = 0
     let dpr = 1
-    let maxTier = MAX_TIER_WIDE
     const env: Env = { width: 0, height: 0, rng }
-    let world: World = createWorld({ x: 0, y: 0 })
+    let world: World = createWorld({ x: 0, y: 0 }, rng)
     let clock = 0
-    let nextTaskAt = 0
     const pointer = { x: Number.NaN, y: Number.NaN }
     let rafId = 0
     let running = true
     let last = performance.now()
 
-    const findLink = (id: number) =>
-      world.links.find((candidate) => candidate.id === id)
-
-    const renderLive = () => {
+    const render = () => {
+      sctx.clearRect(0, 0, width, height)
       lctx.clearRect(0, 0, width, height)
-      lctx.globalCompositeOperation = 'lighter'
-      drawAmbient(lctx, world.ambient)
 
-      for (const link of world.links) {
-        if (link.committed || link.build <= 0) continue
-        const from = world.factoryById[link.fromId]
-        if (from) drawLink(lctx, link, from.tier, link.build, 1.7)
-      }
+      sctx.globalCompositeOperation = 'lighter'
+      drawAmbient(sctx, world.ambient)
+      sctx.globalCompositeOperation = 'source-over'
 
-      for (const product of world.products) {
-        const link = findLink(product.linkId)
-        if (!link) continue
-        const from = world.factoryById[link.fromId]
-        if (from) drawProduct(lctx, link, product.at, from.tier)
-      }
+      drawRoads(sctx, world)
+      drawJunctions(sctx, world, clock)
+      drawBuildings(sctx, world)
 
-      lctx.globalCompositeOperation = 'source-over'
-
-      for (const factory of world.factories) drawFactory(lctx, factory, clock)
-      for (const pulse of world.pulses) drawPulse(lctx, pulse)
+      drawVehicles(lctx, world)
+      drawPulses(lctx, world.pulses)
+      drawParticles(lctx, world.particles)
 
       if (world.phase === 'dissolve') {
-        const alpha = clamp((clock - world.dissolveStart) / DISSOLVE_MS, 0, 1) ** 1.15
-        drawDissolve(lctx, alpha)
+        const alpha =
+          ((clock - world.dissolveStart) / 8000) ** 1.15
+        drawDissolve(lctx, Math.min(1, Math.max(0, alpha)))
       }
     }
 
     const reset = () => {
       env.width = width
       env.height = height
-      world = createWorld(anchorFor(width, height))
-      resetWorld(world, env, density)
-      nextTaskAt = clock + 600
+      world = createWorld({ x: width * 0.46, y: height * 0.54 }, rng)
+      resetWorld(world, env, density, clock)
       sctx.clearRect(0, 0, width, height)
       lctx.clearRect(0, 0, width, height)
     }
@@ -110,23 +87,12 @@ export default function FactoryField({ density = 1, className }: Props) {
     const buildStaticFrame = () => {
       env.width = width
       env.height = height
-      world = createWorld(anchorFor(width, height))
-      buildAmbient(world, env, density)
-      buildStatic(world, env, STATIC_TIER)
-
-      for (const link of world.links) {
-        const from = world.factoryById[link.fromId]
-        if (from) drawLink(sctx, link, from.tier, 1, 1)
-      }
-      for (let i = 0; i < world.links.length; i++) {
-        if (i % 3 !== 0) continue
-        const link = world.links[i]
-        const from = world.factoryById[link.fromId]
-        if (from) {
-          drawProduct(sctx, link, link.curve.length * (0.25 + (i % 5) * 0.13), from.tier)
-        }
-      }
-      for (const factory of world.factories) drawFactory(sctx, factory, 0)
+      world = createWorld({ x: width * 0.46, y: height * 0.54 }, rng)
+      buildStatic(world, env)
+      drawRoads(sctx, world)
+      drawJunctions(sctx, world, 0)
+      drawBuildings(sctx, world)
+      drawVehicles(sctx, world)
     }
 
     const resize = () => {
@@ -134,7 +100,6 @@ export default function FactoryField({ density = 1, className }: Props) {
       width = structCanvas.clientWidth
       height = structCanvas.clientHeight
       if (width === 0 || height === 0) return
-      maxTier = width < 720 ? MAX_TIER_NARROW : MAX_TIER_WIDE
 
       for (const canvas of [structCanvas, liveCanvas]) {
         canvas.width = Math.floor(width * dpr)
@@ -154,34 +119,10 @@ export default function FactoryField({ density = 1, className }: Props) {
       const dtMs = Math.min(now - last, 50)
       last = now
       clock += dtMs
-      const t = clock * 0.00024
 
-      if (world.phase === 'grow') {
-        if (world.dissolveAt === 0 && clock >= nextTaskAt) {
-          processTask(world, env)
-          nextTaskAt = clock + PLACE_DELAY
-        }
-        maybeSpawnTop(world, env, clock, maxTier)
-        if (world.dissolveAt > 0 && clock >= world.dissolveAt) {
-          world.phase = 'dissolve'
-          world.dissolveStart = clock
-        }
-      } else if (clock - world.dissolveStart >= DISSOLVE_MS) {
-        reset()
-      }
-
-      if (world.phase === 'grow') stepFactories(world, dtMs, clock)
-
-      const committed = updateLinks(world, dtMs)
-      for (const link of committed) {
-        const from = world.factoryById[link.fromId]
-        if (from) drawLink(sctx, link, from.tier, 1, 1)
-      }
-
-      updateProducts(world, dtMs)
-      updatePulses(world, dtMs)
-      updateAmbient(world, env, dtMs, t, pointer)
-      renderLive()
+      stepWorld(world, env, dtMs, clock, pointer)
+      if (dissolveFinished(world, clock)) reset()
+      render()
 
       rafId = requestAnimationFrame(loop)
     }
