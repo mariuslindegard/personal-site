@@ -351,6 +351,11 @@ export function buildStatic(world: World, env: Env): void {
   addRoad(world, a1.pos, b.pos, 1, true)
   addRoad(world, a2.pos, b.pos, 1, true)
   addRoad(world, b.pos, c.pos, 1, true)
+  addRoad(world, a2.pos, c.pos, 3, true)
+  const junction = world.nodes.find((node) => node.segments.length >= 2)
+  if (junction) junction.signal = true
+  world.highways = 1
+  world.signals = junction ? 1 : 0
   b.inputs[0] = 3
   b.output[1] = 2
   c.inputs[1] = 2

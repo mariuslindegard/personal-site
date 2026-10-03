@@ -150,32 +150,42 @@ function maybeBuildHighway(world: World): void {
   if ((world.produced[1] ?? 0) < 1) return
   if (world.buildings.length < HIGHWAY_MIN_BUILDINGS) return
 
-  const candidates = world.nodes
-    .filter((node) => node.segments.length >= 2)
-    .sort((a, b) => b.segments.length - a.segments.length)
-  if (candidates.length < 2) return
+  const nodes = world.buildings
+    .filter((building) => building.state === 'active')
+    .map((building) => world.nodeById[building.nodeId])
+    .filter((node): node is NonNullable<typeof node> => Boolean(node))
+  if (nodes.length < 2) return
+
+  const pairs: { a: (typeof nodes)[number]; b: (typeof nodes)[number]; d: number }[] = []
+  for (let i = 0; i < nodes.length; i++) {
+    for (let j = i + 1; j < nodes.length; j++) {
+      pairs.push({
+        a: nodes[i],
+        b: nodes[j],
+        d: dist(nodes[i].pos, nodes[j].pos),
+      })
+    }
+  }
+  pairs.sort((p, q) => q.d - p.d)
 
   let attempts = 0
-  for (let i = 0; i < candidates.length && attempts < 8; i++) {
-    for (let j = i + 1; j < candidates.length && attempts < 8; j++) {
-      attempts++
-      const a = candidates[i]
-      const b = candidates[j]
-      if (dist(a.pos, b.pos) < 140) continue
-      const created = addRoad(world, a.pos, b.pos, 3, false)
-      if (!created || created.length === 0) continue
-      world.highways += 1
-      world.pulses.push({
-        x: a.pos.x,
-        y: a.pos.y,
-        t: 0,
-        max: 26,
-        r: 4,
-        rgb: [228, 178, 108],
-        width: 1.2,
-      })
-      return
-    }
+  for (const pair of pairs) {
+    if (attempts >= 6) break
+    if (pair.d < 160) break
+    attempts++
+    const created = addRoad(world, pair.a.pos, pair.b.pos, 3, false)
+    if (!created || created.length === 0) continue
+    world.highways += 1
+    world.pulses.push({
+      x: pair.a.pos.x,
+      y: pair.a.pos.y,
+      t: 0,
+      max: 26,
+      r: 4,
+      rgb: [228, 178, 108],
+      width: 1.2,
+    })
+    return
   }
 }
 

@@ -28,6 +28,7 @@ export type RoadSegment = {
   materialRequired: number
   materialDelivered: number
   demolish: boolean
+  reverse: boolean
 }
 
 export type BuildingState = 'site' | 'active' | 'complete'

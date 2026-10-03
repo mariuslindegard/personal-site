@@ -87,6 +87,7 @@ function makeSegment(
     materialRequired: required,
     materialDelivered: built ? required : 0,
     demolish: false,
+    reverse: false,
   }
   world.segments.push(segment)
   world.segmentById[segment.id] = segment
@@ -140,7 +141,10 @@ export function addRoad(
     if (seg.a === bNode.id || seg.b === bNode.id) continue
     const hit = segmentIntersection(a, b, seg.pts[0], seg.pts[seg.pts.length - 1])
     if (!hit) continue
-    if (!seg.built) return null
+    if (!seg.built) {
+      removeSegmentRaw(world, seg)
+      continue
+    }
     let node = nearestNode(world, hit.point, 5)
     if (!node) node = splitSegment(world, seg, hit.point)
     if (!stops.some((s) => s.node.id === node.id)) stops.push({ t: hit.t, node })

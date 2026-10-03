@@ -90,7 +90,16 @@ export function planHaulJobs(world: World, clock: number): void {
   for (const job of world.jobs) if (job.state !== 'done' && job.kind === 'haul') pendingCount++
   if (pendingCount > 48) return
 
-  for (const building of world.buildings) {
+  const ordered = world.buildings.slice().sort((a, b) => {
+    const rank = (x: Building): number => {
+      if (x.state === 'site') return 0
+      const r = BUILDINGS[x.key]?.recipe
+      return r?.manual ? 2 : 1
+    }
+    return rank(a) - rank(b)
+  })
+
+  for (const building of ordered) {
     if (building.state === 'complete') continue
 
     if (building.state === 'active') {
@@ -153,27 +162,25 @@ export function planRoadJobs(world: World, clock: number): void {
     )
     if (already) continue
     const mat = segment.tier === 1 ? 0 : segment.tier === 2 ? 1 : 2
-    let source: Building | null = null
-    let bestD = Infinity
-  const ordered = world.buildings.slice().sort((a, b) => {
-    const rank = (x: Building): number => {
-      if (x.state === 'site') return 0
-      const r = BUILDINGS[x.key]?.recipe
-      return r?.manual ? 2 : 1
-    }
-    return rank(a) - rank(b)
-  })
 
-  for (const building of ordered) {
+    let source: Building | null = null
+    let reverse = false
+    let bestD = Infinity
+    for (const building of world.buildings) {
       if (building.state !== 'active') continue
       if (availableOutput(building, world, mat) <= 0) continue
-      const d = dist(building.pos, segment.pts[0])
+      const canForward = Boolean(findPath(world, building.nodeId, segment.a))
+      const canBackward = !canForward && Boolean(findPath(world, building.nodeId, segment.b))
+      if (!canForward && !canBackward) continue
+      const startPt = canForward ? segment.pts[0] : segment.pts[1]
+      const d = dist(building.pos, startPt)
       if (d >= bestD) continue
-      if (!findPath(world, building.nodeId, segment.a)) continue
       bestD = d
       source = building
+      reverse = canBackward
     }
     if (!source) continue
+    segment.reverse = reverse
     const remaining = segment.materialRequired - segment.materialDelivered
     const qty = Math.min(remaining, cap, availableOutput(source, world, mat))
     if (qty < 1) continue
@@ -323,9 +330,8 @@ function routeHaul(
   const vNode = nearestNode(world, vehicle.pos)
   if (!vNode) return null
   const p1 = findPath(world, vNode.id, sourceNode)
-  if (!p1) return null
   const p2 = findPath(world, sourceNode, destNode)
-  if (!p2) return null
+  if (!p1 || !p2) return null
   const pts1 = pathPoints(world, p1.nodes, p1.segments)
   const pts2 = pathPoints(world, p2.nodes, p2.segments)
   let signals = 0
@@ -363,26 +369,31 @@ export function assignJobs(world: World): void {
         } else {
           const segment = world.segmentById[job.segmentId]
           if (!segment) continue
-          destNode = segment.a
+          destNode = segment.reverse ? segment.b : segment.a
         }
         const route = routeHaul(world, vehicle.id, sourceNode, destNode)
-        if (!route) continue
         if (job.kind === 'pave') {
           const segment = world.segmentById[job.segmentId]
           if (!segment) continue
-          const tip = pointOnPolyline(segment.pts, segment.cum, segment.progress * segment.length)
-          const start = segment.pts[0]
-          const path = join(route.path, [start, tip])
-          vehicle.path = path
+          const start = segment.reverse ? segment.pts[1] : segment.pts[0]
+          const d = segment.reverse
+            ? (1 - segment.progress) * segment.length
+            : segment.progress * segment.length
+          const tip = pointOnPolyline(segment.pts, segment.cum, d)
+          const base = route ? route.path : [source.pos, start]
+          vehicle.path = join(base, [start, tip])
           vehicle.pathIndex = 0
-          vehicle.loadIndex = route.loadIndex
+          vehicle.loadIndex = route ? route.loadIndex : 0
+          vehicle.speedMul = route ? 1 + SIGNAL_SPEED_BONUS * route.signals : 1
         } else {
-          vehicle.path = route.path
+          const dest = world.buildingById[job.destId]
+          if (!dest) continue
+          vehicle.path = route ? route.path : [source.pos, dest.pos]
           vehicle.pathIndex = 0
-          vehicle.loadIndex = route.loadIndex
+          vehicle.loadIndex = route ? route.loadIndex : 0
+          vehicle.speedMul = route ? 1 + SIGNAL_SPEED_BONUS * route.signals : 1
         }
         vehicle.state = 'toSource'
-        vehicle.speedMul = 1 + SIGNAL_SPEED_BONUS * route.signals
       } else {
         const vNode = nearestNode(world, vehicle.pos)
         if (!vNode) continue
@@ -397,14 +408,19 @@ export function assignJobs(world: World): void {
           destNode = dest.nodeId
         }
         const p = findPath(world, vNode.id, destNode)
-        if (!p) continue
-        vehicle.path = pathPoints(world, p.nodes, p.segments)
+        if (p) {
+          vehicle.path = pathPoints(world, p.nodes, p.segments)
+          let signals = 0
+          for (const id of p.nodes) if (world.nodeById[id]?.signal) signals++
+          vehicle.speedMul = 1 + SIGNAL_SPEED_BONUS * signals
+        } else {
+          const target = world.nodeById[destNode]
+          vehicle.path = target ? [vehicle.pos, target.pos] : []
+          vehicle.speedMul = 1
+        }
         vehicle.pathIndex = 0
         vehicle.loadIndex = -1
         vehicle.state = 'toSite'
-        let signals = 0
-        for (const id of p.nodes) if (world.nodeById[id]?.signal) signals++
-        vehicle.speedMul = 1 + SIGNAL_SPEED_BONUS * signals
       }
       job.state = 'assigned'
       job.assigned = vehicle.id

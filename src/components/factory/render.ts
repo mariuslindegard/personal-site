@@ -85,15 +85,15 @@ function drawSegment(g: CanvasRenderingContext2D, segment: RoadSegment) {
     strokePath(g, segment.pts)
     g.setLineDash([])
     if (segment.progress > 0) {
-      const tip = pointOnPolyline(
-        segment.pts,
-        segment.cum,
-        segment.progress * segment.length,
-      )
+      const d = segment.reverse
+        ? (1 - segment.progress) * segment.length
+        : segment.progress * segment.length
+      const tip = pointOnPolyline(segment.pts, segment.cum, d)
+      const startPt = segment.reverse ? b : a
       g.lineCap = 'round'
       g.strokeStyle = rgba(lighten(def.rgb, 30), 0.9)
       g.lineWidth = def.width
-      strokePath(g, [a, tip])
+      strokePath(g, [startPt, tip])
     }
     void b
   }
