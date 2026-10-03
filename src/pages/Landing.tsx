@@ -3,6 +3,8 @@ import LineField from '../components/LineField'
 import GoogleIcon from '../components/GoogleIcon'
 import LanguageToggle from '../components/LanguageToggle'
 import Projects from '../components/Projects'
+import GitHub from '../components/GitHub'
+import About from '../components/About'
 import Section from '../components/Section'
 import SectionNav from '../components/SectionNav'
 import Socials from '../components/Socials'
@@ -12,22 +14,92 @@ import { useI18n } from '../i18n/useI18n'
 function Spinner() {
   return (
     <span
-      className="inline-block size-4 animate-spin rounded-full border-[1.5px] border-white/30 border-t-white/90"
+      className="inline-block size-3.5 animate-spin rounded-full border-[1.5px] border-white/30 border-t-white/90"
       aria-hidden="true"
     />
   )
 }
 
-export default function Landing() {
+/**
+ * Sign-in lives in the header: the dashboard is a private tool, so the landing
+ * page no longer advertises it in the hero copy or asks visitors to log in.
+ */
+function HeaderAuth() {
   const { user, loading, configured, error, signInWithGoogle, clearError } =
     useAuth()
   const { t } = useI18n()
 
-  const firstName = user?.displayName?.split(' ')[0]
+  if (loading) {
+    return (
+      <span
+        role="status"
+        aria-label={t.hero.restoring}
+        className="flex h-[34px] items-center gap-2 rounded-full border border-white/10 px-3.5 text-xs text-white/40"
+      >
+        <Spinner />
+      </span>
+    )
+  }
+
+  if (user) {
+    return (
+      <Link
+        to="/dashboard"
+        className="rounded-full border border-white/15 px-3.5 py-1.5 text-sm text-white/80 backdrop-blur-sm transition hover:border-white/30 hover:text-white"
+      >
+        {t.nav.dashboard}
+      </Link>
+    )
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={signInWithGoogle}
+        disabled={!configured}
+        title={configured ? undefined : t.hero.hint}
+        className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-3.5 py-1.5 text-sm text-white/80 backdrop-blur-sm transition hover:border-white/30 hover:bg-white/[0.1] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+      >
+        <GoogleIcon className="size-3.5" />
+        {t.hero.signIn}
+      </button>
+
+      {/* Errors and the not-configured hint surface here rather than in the hero. */}
+      {error && (
+        <div
+          role="alert"
+          className="absolute right-0 z-40 mt-2 flex w-64 items-start gap-2 rounded-lg border border-red-400/25 bg-ink-900/95 px-3 py-2 text-xs text-red-200 shadow-xl backdrop-blur-md"
+        >
+          <span className="flex-1 leading-relaxed">{error}</span>
+          <button
+            type="button"
+            onClick={clearError}
+            aria-label={t.hero.dismiss}
+            className="text-red-200/60 transition hover:text-red-100"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {!configured && !error && (
+        <div className="absolute right-0 z-40 mt-2 w-64 rounded-lg border border-amber-400/20 bg-ink-900/95 px-3 py-2 text-[11px] leading-relaxed text-amber-200/70 shadow-xl backdrop-blur-md">
+          {t.hero.hint}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function Landing() {
+  const { t } = useI18n()
 
   const sections = [
     { id: 'home', label: t.nav.home },
     { id: 'projects', label: t.nav.projects },
+    { id: 'github', label: t.nav.github },
+    { id: 'about', label: t.nav.about },
     { id: 'socials', label: t.nav.socials },
   ]
 
@@ -35,7 +107,7 @@ export default function Landing() {
     <div className="relative h-svh overflow-hidden bg-ink-950">
       {/*
         The animated line field sits behind every section and stays fixed, so
-        the scroll feels like one continuous space rather than three slides.
+        the scroll feels like one continuous space rather than five slides.
       */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <LineField density={1.1} />
@@ -43,24 +115,17 @@ export default function Landing() {
       </div>
 
       {/* Top bar — fixed above the scroll container */}
-      <header className="fixed inset-x-0 top-0 z-30 flex items-center justify-between px-6 py-6 sm:px-10">
+      <header className="fixed inset-x-0 top-0 z-30 flex items-center justify-between gap-3 px-6 py-6 sm:px-10">
         <a
           href="#home"
-          className="text-sm font-medium tracking-[0.22em] text-white/50 uppercase transition hover:text-white/80"
+          className="shrink-0 text-sm font-medium tracking-[0.22em] text-white/50 uppercase transition hover:text-white/80"
         >
           Marius
         </a>
 
         <div className="flex items-center gap-2.5">
           <LanguageToggle />
-          {!loading && user && (
-            <Link
-              to="/dashboard"
-              className="rounded-full border border-white/15 px-4 py-1.5 text-sm text-white/80 backdrop-blur-sm transition hover:border-white/30 hover:text-white"
-            >
-              {t.nav.dashboard}
-            </Link>
-          )}
+          <HeaderAuth />
         </div>
       </header>
 
@@ -71,7 +136,7 @@ export default function Landing() {
         <Section id="home" ariaLabel={t.nav.home}>
           <div className="flex flex-col items-center text-center">
             <span
-              className="animate-fade-up mb-6 inline-flex sm:mb-8 items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 text-xs tracking-wide text-white/60 backdrop-blur-sm"
+              className="animate-fade-up mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 text-xs tracking-wide text-white/60 backdrop-blur-sm sm:mb-8"
               style={{ animationDelay: '0ms' }}
             >
               <span className="size-1.5 rounded-full bg-accent" />
@@ -90,71 +155,16 @@ export default function Landing() {
             </h1>
 
             <p
-              className="animate-fade-up mt-5 max-w-lg sm:mt-7 text-base leading-relaxed text-pretty text-white/55 sm:text-lg"
+              className="animate-fade-up mt-5 max-w-lg text-base leading-relaxed text-pretty text-white/55 sm:mt-7 sm:text-lg"
               style={{ animationDelay: '180ms' }}
             >
               {t.hero.subtitle}
             </p>
 
-            <div
-              className="animate-fade-up mt-8 flex flex-col items-center gap-5 sm:mt-11"
-              style={{ animationDelay: '270ms' }}
-            >
-              {loading ? (
-                <div className="flex h-12 items-center gap-3 text-sm text-white/50">
-                  <Spinner />
-                  {t.hero.restoring}
-                </div>
-              ) : user ? (
-                <Link
-                  to="/dashboard"
-                  className="group inline-flex h-12 items-center gap-2.5 rounded-full bg-white px-7 text-[15px] font-medium text-ink-950 shadow-[0_0_40px_-8px_rgba(122,162,255,0.55)] transition hover:shadow-[0_0_56px_-6px_rgba(122,162,255,0.8)]"
-                >
-                  {t.hero.continueAs} {firstName ?? 'you'}
-                  <span className="transition-transform group-hover:translate-x-0.5">
-                    →
-                  </span>
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  onClick={signInWithGoogle}
-                  disabled={!configured}
-                  className="inline-flex h-12 items-center gap-3 rounded-full border border-white/15 bg-white/95 px-6 text-[15px] font-medium text-ink-950 shadow-[0_0_40px_-10px_rgba(122,162,255,0.6)] transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <GoogleIcon />
-                  {t.hero.signIn}
-                </button>
-              )}
-
-              {error && (
-                <div
-                  role="alert"
-                  className="flex items-center gap-3 rounded-lg border border-red-400/25 bg-red-500/10 px-4 py-2.5 text-sm text-red-200"
-                >
-                  {error}
-                  <button
-                    type="button"
-                    onClick={clearError}
-                    aria-label={t.hero.dismiss}
-                    className="text-red-200/60 transition hover:text-red-100"
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-
-              {!configured && !loading && (
-                <p className="max-w-sm text-xs leading-relaxed text-amber-200/70">
-                  {t.hero.hint}
-                </p>
-              )}
-            </div>
-
             <a
               href="#projects"
-              className="animate-fade-up mt-10 flex flex-col items-center gap-2 sm:mt-16 [@media(max-height:700px)]:hidden text-[11px] tracking-[0.2em] text-white/30 uppercase transition hover:text-white/60"
-              style={{ animationDelay: '380ms' }}
+              className="animate-fade-up mt-14 flex flex-col items-center gap-2 text-[11px] tracking-[0.2em] text-white/30 uppercase transition hover:text-white/60 sm:mt-16 [@media(max-height:700px)]:hidden"
+              style={{ animationDelay: '270ms' }}
             >
               {t.hero.scroll}
               <span aria-hidden="true" className="text-base leading-none">
@@ -167,6 +177,16 @@ export default function Landing() {
         {/* ── Projects ───────────────────────────────────────── */}
         <Section id="projects" ariaLabel={t.nav.projects}>
           <Projects />
+        </Section>
+
+        {/* ── GitHub ─────────────────────────────────────────── */}
+        <Section id="github" ariaLabel={t.nav.github}>
+          <GitHub />
+        </Section>
+
+        {/* ── About ──────────────────────────────────────────── */}
+        <Section id="about" ariaLabel={t.nav.about}>
+          <About />
         </Section>
 
         {/* ── Socials ────────────────────────────────────────── */}

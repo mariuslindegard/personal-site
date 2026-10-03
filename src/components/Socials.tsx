@@ -1,5 +1,6 @@
 import { useI18n } from '../i18n/useI18n'
-import { ArrowUpRight, InstagramIcon, LinkedInIcon } from './Icons'
+import { GITHUB_PROFILE_URL } from '../lib/github'
+import { ArrowUpRight, GitHubIcon, InstagramIcon, LinkedInIcon } from './Icons'
 
 const LINKEDIN_URL =
   'https://www.linkedin.com/in/marius-berg-lindeg%C3%A5rd-21826121a/'
@@ -14,6 +15,12 @@ export default function Socials() {
       href: LINKEDIN_URL,
       Icon: LinkedInIcon,
       ...t.socials.linkedin,
+    },
+    {
+      id: 'github',
+      href: GITHUB_PROFILE_URL,
+      Icon: GitHubIcon,
+      ...t.socials.github,
     },
     {
       id: 'instagram',
@@ -37,7 +44,7 @@ export default function Socials() {
         </p>
       </header>
 
-      <ul className="grid gap-4 sm:grid-cols-2">
+      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {links.map(({ id, href, Icon, label, handle, note }) => (
           <li key={id}>
             <a

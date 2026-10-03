@@ -17,14 +17,21 @@ export type ProjectItem = {
 
 export type Dict = {
   langToggle: { aria: string }
-  nav: { home: string; projects: string; socials: string; dashboard: string; sections: string }
+  nav: {
+    home: string
+    projects: string
+    github: string
+    about: string
+    socials: string
+    dashboard: string
+    sections: string
+  }
   hero: {
     badge: string
     titleTop: string
     titleAccent: string
     subtitle: string
     signIn: string
-    continueAs: string
     restoring: string
     scroll: string
     hint: string
@@ -42,12 +49,39 @@ export type Dict = {
     more: string
     items: ProjectItem[]
   }
+  github: {
+    eyebrow: string
+    heading: string
+    subtitle: string
+    openProfile: string
+    viewAll: string
+    reposHeading: string
+    repositories: string
+    followers: string
+    following: string
+    noDescription: string
+    updated: string
+    cached: string
+  }
+  about: {
+    eyebrow: string
+    heading: string
+    intro: string
+    likesLabel: string
+    likes: string[]
+    photoAlt: string
+    contactHeading: string
+    contactBody: string
+    emailLabel: string
+    phoneLabel: string
+  }
   socials: {
     eyebrow: string
     heading: string
     subtitle: string
     linkedin: { label: string; handle: string; note: string }
     instagram: { label: string; handle: string; note: string }
+    github: { label: string; handle: string; note: string }
     footer: string
   }
 }
@@ -57,6 +91,8 @@ export const en: Dict = {
   nav: {
     home: 'Home',
     projects: 'Projects',
+    github: 'GitHub',
+    about: 'About',
     socials: 'Socials',
     dashboard: 'Dashboard',
     sections: 'Sections',
@@ -66,9 +102,8 @@ export const en: Dict = {
     titleTop: 'Welcome to my',
     titleAccent: 'corner of the web',
     subtitle:
-      'A quiet place on the internet. Sign in to continue to your dashboard, or scroll on to see what I have been building.',
+      'A quiet place on the internet. Scroll on to see what I have been building.',
     signIn: 'Sign in with Google',
-    continueAs: 'Continue as',
     restoring: 'Restoring session…',
     scroll: 'Scroll',
     hint: 'Firebase isn’t configured yet. Copy .env.example to .env.local and add your keys, then restart the dev server.',
@@ -101,6 +136,42 @@ export const en: Dict = {
       },
     ],
   },
+  github: {
+    eyebrow: '~/github',
+    heading: 'GitHub',
+    subtitle:
+      'Public repositories and the code behind the things on this page.',
+    openProfile: 'Open profile',
+    viewAll: 'View all repositories',
+    reposHeading: 'Recently pushed',
+    repositories: 'Repositories',
+    followers: 'Followers',
+    following: 'Following',
+    noDescription: 'No description yet.',
+    updated: 'Updated',
+    cached: 'Showing a cached snapshot — the GitHub API is unreachable right now.',
+  },
+  about: {
+    eyebrow: '~/about',
+    heading: 'About me',
+    intro:
+      'I build software and systems, and I like to understand how things work all the way down. If it can be taken apart, automated or self-hosted, I am probably already reading about it.',
+    likesLabel: 'What I like',
+    likes: [
+      'Nature',
+      'Hikes',
+      'Programming',
+      'Systems',
+      'Motorcycles',
+      'People',
+    ],
+    photoAlt: 'Marius outdoors, wearing a backpack',
+    contactHeading: 'Want to work with me?',
+    contactBody:
+      'I am open to interesting projects, collaborations and good conversations. The fastest way to reach me is by email.',
+    emailLabel: 'Email',
+    phoneLabel: 'Phone',
+  },
   socials: {
     eyebrow: '~/socials',
     heading: 'Socials',
@@ -115,6 +186,11 @@ export const en: Dict = {
       handle: '@marius_lindegaard',
       note: 'Everything else.',
     },
+    github: {
+      label: 'GitHub',
+      handle: '@mariuslindegard',
+      note: 'Code, side projects and experiments.',
+    },
     footer: '© 2026 Marius Berg Lindegård',
   },
 }
@@ -124,6 +200,8 @@ export const no: Dict = {
   nav: {
     home: 'Hjem',
     projects: 'Prosjekter',
+    github: 'GitHub',
+    about: 'Om meg',
     socials: 'Sosiale medier',
     dashboard: 'Dashbord',
     sections: 'Seksjoner',
@@ -133,9 +211,8 @@ export const no: Dict = {
     titleTop: 'Velkommen til min',
     titleAccent: 'del av nettet',
     subtitle:
-      'Et rolig sted på internett. Logg inn for å komme til dashbordet, eller bla videre for å se hva jeg har bygget.',
+      'Et rolig sted på internett. Bla videre for å se hva jeg har bygget.',
     signIn: 'Logg inn med Google',
-    continueAs: 'Fortsett som',
     restoring: 'Gjenoppretter økt…',
     scroll: 'Bla',
     hint: 'Firebase er ikke konfigurert ennå. Kopier .env.example til .env.local, fyll inn nøklene og start utviklingsserveren på nytt.',
@@ -168,6 +245,43 @@ export const no: Dict = {
       },
     ],
   },
+  github: {
+    eyebrow: '~/github',
+    heading: 'GitHub',
+    subtitle:
+      'Offentlige repositorier og koden bak tingene på denne siden.',
+    openProfile: 'Åpne profil',
+    viewAll: 'Se alle repositorier',
+    reposHeading: 'Nylig pushet',
+    repositories: 'Repositorier',
+    followers: 'Følgere',
+    following: 'Følger',
+    noDescription: 'Ingen beskrivelse ennå.',
+    updated: 'Oppdatert',
+    cached:
+      'Viser et mellomlagret øyeblikksbilde — GitHub-API-et er utilgjengelig akkurat nå.',
+  },
+  about: {
+    eyebrow: '~/om-meg',
+    heading: 'Om meg',
+    intro:
+      'Jeg bygger programvare og systemer, og liker å forstå hvordan ting henger sammen helt ned til bunnen. Hvis det kan tas fra hverandre, automatiseres eller driftes selv, har jeg sannsynligvis allerede lest om det.',
+    likesLabel: 'Det jeg liker',
+    likes: [
+      'Natur',
+      'Fjellturer',
+      'Programmering',
+      'Systemer',
+      'Motorsykler',
+      'Mennesker',
+    ],
+    photoAlt: 'Marius utendørs, med ryggsekk',
+    contactHeading: 'Vil du jobbe med meg?',
+    contactBody:
+      'Jeg er åpen for interessante prosjekter, samarbeid og gode samtaler. Raskeste vei til meg er e-post.',
+    emailLabel: 'E-post',
+    phoneLabel: 'Telefon',
+  },
   socials: {
     eyebrow: '~/sosiale',
     heading: 'Sosiale medier',
@@ -181,6 +295,11 @@ export const no: Dict = {
       label: 'Instagram',
       handle: '@marius_lindegaard',
       note: 'Alt det andre.',
+    },
+    github: {
+      label: 'GitHub',
+      handle: '@mariuslindegard',
+      note: 'Kode, sideprosjekter og eksperimenter.',
     },
     footer: '© 2026 Marius Berg Lindegård',
   },
