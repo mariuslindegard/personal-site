@@ -9,7 +9,6 @@ type Particle = {
   trail: number[]
   speed: number
   life: number
-  maxLife: number
   brightness: number
 }
 
@@ -31,14 +30,21 @@ const TRAIL_LENGTH = 18
 const ACCENT = '122, 162, 255'
 const ACCENT_SOFT = '169, 192, 255'
 
-/** Pause between settlements. Grows with the graph so it slows down forever. */
-const growthDelay = (n: number) => Math.min(700 + n * 215, 7500)
+/**
+ * Pause between opening new build fronts. Grows with the graph so the pace
+ * keeps easing as it fills, but stays short enough that structure forms in
+ * seconds rather than minutes.
+ */
+const growthDelay = (n: number) => Math.min(240 + n * 65, 2200)
 
-/** Particles that must arrive before an edge is committed. */
-const NEED_ARRIVALS = 3
+/** How many frontier pads are open for business at once. */
+const MAX_TARGETS = 2
 
-/** Radius of the funnel that bends ambient lines toward the active target. */
-const PULL_RADIUS = 340
+/** Radius of the funnel that bends ambient lines toward the nearest pad. */
+const PULL_RADIUS = 430
+
+/** Distance at which a line is considered to have reached a pad. */
+const ARRIVE_RADIUS = 20
 
 /** How many nodes the reduced-motion frame renders. */
 const STATIC_NODES = 34
@@ -163,12 +169,12 @@ const NB4: ReadonlyArray<readonly [number, number]> = [
 /**
  * Living background that slowly builds a circuit.
  *
- * Organic flow lines wander the field until a target pad appears, then bend
- * into a funnel and converge on it. Each arrival contributes; once enough have
- * landed the connection is committed to a *persistent* offscreen layer as an
- * orderly 45°-chamfered PCB trace, and the new pad becomes the next anchor.
- * Growth gaps lengthen with the graph, so it is visibly underway within
- * seconds but keeps extending for the best part of an hour.
+ * Lines stream in continuously from every edge and roam the flow field until
+ * they find one of the active frontier pads. The moment a line reaches a pad
+ * it settles the connection to the *persistent* offscreen layer as an orderly
+ * 45°-chamfered PCB trace, the pad becomes part of the structure, and the next
+ * frontier opens up. Every dot that enters therefore ends up attached to the
+ * graph rather than drifting back off screen.
  *
  * Two stacked canvases: the structure layer is append-only (so cost is flat no
  * matter how much has been built), the live layer is cleared each frame and
@@ -212,8 +218,8 @@ export default function LineField({ density = 1, className }: Props) {
     let pulses: Pulse[] = []
     let signals: Signal[] = []
 
-    let target = -1
-    let arrivals = 0
+    // Frontier pads that lines are currently converging on.
+    let targets: number[] = []
     let built = 0
     let clock = 0
     let nextGrowthAt = 0
@@ -291,6 +297,7 @@ export default function LineField({ density = 1, className }: Props) {
 
       for (let i = 0; i < nodes.length; i++) {
         if (state[i] !== 0 || builtNear[i] === 0) continue
+        if (targets.includes(i)) continue
         pool.push(i)
 
         // Prefer cells that can be reached straight, not only diagonally, so
@@ -324,7 +331,7 @@ export default function LineField({ density = 1, className }: Props) {
       return chosen
     }
 
-    /** Wire a new pad in. Called once enough lines have converged on it. */
+    /** Wire a new pad in. Called the instant a line reaches it. */
     const commit = (toIdx: number) => {
       const c = colOf(toIdx)
       const r = rowOf(toIdx)
@@ -345,7 +352,10 @@ export default function LineField({ density = 1, className }: Props) {
           }
         }
       }
-      if (parent === -1) return
+      if (parent === -1) {
+        targets = targets.filter((t) => t !== toIdx)
+        return
+      }
 
       // Mostly attach to the newest pad (a continuous growing edge), sometimes
       // tap an older one, which is what gives the circuit its bus topology.
@@ -363,8 +373,7 @@ export default function LineField({ density = 1, className }: Props) {
       drawPad(sctx, nodes[toIdx], false)
       pulses.push({ x: nodes[toIdx].x, y: nodes[toIdx].y, t: 0, s: 1 })
 
-      target = -1
-      arrivals = 0
+      targets = targets.filter((t) => t !== toIdx)
       nextGrowthAt = clock + growthDelay(built)
     }
 
@@ -391,9 +400,8 @@ export default function LineField({ density = 1, className }: Props) {
       edges = []
       pulses = []
       signals = []
+      targets = []
       built = 0
-      target = -1
-      arrivals = 0
       clock = 0
       dissolveFrames = 0
       nextSignalAt = 4000
@@ -416,7 +424,7 @@ export default function LineField({ density = 1, className }: Props) {
       markNeighbours(root)
       drawPad(sctx, nodes[root], true)
       pulses.push({ x: nodes[root].x, y: nodes[root].y, t: 0, s: 1 })
-      nextGrowthAt = 500
+      nextGrowthAt = 250
     }
 
     /* -------------------------------------------------------------- canvas */
@@ -426,12 +434,25 @@ export default function LineField({ density = 1, className }: Props) {
         p.x = rng() * width
         p.y = rng() * height
       } else {
-        p.x = -40 - rng() * 200
-        p.y = rng() * height
+        // Enter from a random edge so the field never thins into a wave.
+        const margin = 30 + rng() * 180
+        const edge = (rng() * 4) | 0
+        if (edge === 0) {
+          p.x = -margin
+          p.y = rng() * height
+        } else if (edge === 1) {
+          p.x = width + margin
+          p.y = rng() * height
+        } else if (edge === 2) {
+          p.x = rng() * width
+          p.y = -margin
+        } else {
+          p.x = rng() * width
+          p.y = height + margin
+        }
       }
       p.speed = 0.3 + rng() * 0.6
-      p.maxLife = 900 + rng() * 1400
-      p.life = rng() * p.maxLife
+      p.life = 0
       p.brightness = 0.25 + rng() * 0.75
 
       const ring: number[] = []
@@ -441,7 +462,7 @@ export default function LineField({ density = 1, className }: Props) {
 
     const buildParticles = () => {
       const count = Math.round(
-        Math.min(110, Math.max(38, (width / 18) * density)),
+        Math.min(130, Math.max(44, (width / 16) * density)),
       )
       const next: Particle[] = []
       for (let i = 0; i < count; i++) {
@@ -451,10 +472,11 @@ export default function LineField({ density = 1, className }: Props) {
           trail: [],
           speed: 1,
           life: 0,
-          maxLife: 1,
           brightness: 1,
         }
         spawn(p, true)
+        // Stagger the initial fade so the field is already alive on load.
+        p.life = rng() * 140
         next.push(p)
       }
       particles = next
@@ -463,24 +485,33 @@ export default function LineField({ density = 1, className }: Props) {
     const stepParticle = (p: Particle, dt: number, t: number) => {
       let angle = flowAngle(p.x, p.y, t)
 
-      // The funnel: lines inside the pull radius lean toward the active pad
-      // and speed up as they close in, so arrivals read as intent.
-      if (target !== -1) {
-        const tp = nodes[target]
-        const dx = tp.x - p.x
-        const dy = tp.y - p.y
-        const dist = Math.hypot(dx, dy)
-        if (dist < PULL_RADIUS) {
-          if (dist < 16) {
-            arrivals++
+      // The funnel: lines inside the pull radius lean toward the nearest open
+      // pad and speed up as they close in, so arrivals read as intent.
+      if (targets.length) {
+        let best = -1
+        let bestD = Infinity
+        for (const ti of targets) {
+          const tp = nodes[ti]
+          const d = Math.hypot(tp.x - p.x, tp.y - p.y)
+          if (d < bestD) {
+            bestD = d
+            best = ti
+          }
+        }
+        if (best !== -1 && bestD < PULL_RADIUS) {
+          const tp = nodes[best]
+          if (bestD < ARRIVE_RADIUS) {
+            // Settle the connection and immediately send a fresh line in, so
+            // the stream never stops while structure keeps accumulating.
             pulses.push({ x: tp.x, y: tp.y, t: 0, s: 0.35 })
+            commit(best)
             spawn(p, false)
             return
           }
-          const pull = (1 - dist / PULL_RADIUS) ** 1.4 * 0.95
-          angle = blendAngle(angle, Math.atan2(dy, dx), pull)
-          p.x += Math.cos(angle) * p.speed * (1 + pull * 1.8) * dt
-          p.y += Math.sin(angle) * p.speed * (1 + pull * 1.8) * dt
+          const pull = (1 - bestD / PULL_RADIUS) ** 1.3
+          angle = blendAngle(angle, Math.atan2(tp.y - p.y, tp.x - p.x), pull)
+          p.x += Math.cos(angle) * p.speed * (1 + pull * 2.4) * dt
+          p.y += Math.sin(angle) * p.speed * (1 + pull * 2.4) * dt
           p.life += dt
           p.trail.push(p.x, p.y)
           while (p.trail.length > TRAIL_LENGTH * 2) p.trail.splice(0, 2)
@@ -506,8 +537,8 @@ export default function LineField({ density = 1, className }: Props) {
       while (p.trail.length > TRAIL_LENGTH * 2) p.trail.splice(0, 2)
 
       const offScreen =
-        p.x > width + 60 || p.y < -80 || p.y > height + 80 || p.x < -320
-      if (offScreen || p.life > p.maxLife) spawn(p, false)
+        p.x > width + 260 || p.x < -260 || p.y > height + 260 || p.y < -260
+      if (offScreen) spawn(p, false)
     }
 
     /* ------------------------------------------------------------ the loop */
@@ -529,9 +560,8 @@ export default function LineField({ density = 1, className }: Props) {
         const tailX = trail[0]
         const tailY = trail[1]
 
-        const fadeIn = Math.min(1, p.life / 120)
-        const fadeOut = Math.min(1, (p.maxLife - p.life) / 160)
-        const alpha = 0.6 * p.brightness * fadeIn * fadeOut
+        const fadeIn = Math.min(1, p.life / 140)
+        const alpha = 0.62 * p.brightness * fadeIn
         if (alpha <= 0.01) continue
 
         const gradient = lctx.createLinearGradient(tailX, tailY, headX, headY)
@@ -564,9 +594,9 @@ export default function LineField({ density = 1, className }: Props) {
         lctx.fill()
       }
 
-      // Solder-pad ring where the next connection will land.
-      if (target !== -1) {
-        const tp = nodes[target]
+      // Solder-pad rings where the next connections will land.
+      for (const ti of targets) {
+        const tp = nodes[ti]
         const phase = (clock % 1300) / 1300
         const alpha = 0.14 + (1 - Math.abs(phase - 0.5) * 2) * 0.16
         lctx.beginPath()
@@ -631,7 +661,6 @@ export default function LineField({ density = 1, className }: Props) {
           (s) => s.edge < edges.length && s.at < edges[s.edge].len,
         )
       }
-
     }
 
     const loop = (now: number) => {
@@ -655,15 +684,17 @@ export default function LineField({ density = 1, className }: Props) {
           sctx.clearRect(0, 0, width, height)
           buildGrid()
         }
-      } else if (target === -1 && clock >= nextGrowthAt) {
-        target = pickTarget()
-        arrivals = 0
-        if (target === -1) dissolveFrames = 1
+      } else if (targets.length < MAX_TARGETS && clock >= nextGrowthAt) {
+        const next = pickTarget()
+        if (next === -1) {
+          if (targets.length === 0) dissolveFrames = 1
+        } else {
+          targets.push(next)
+          nextGrowthAt = clock + growthDelay(built)
+        }
       }
 
       for (const p of particles) stepParticle(p, dt, t)
-
-      if (target !== -1 && arrivals >= NEED_ARRIVALS) commit(target)
 
       drawLive(dtMs)
 
@@ -698,7 +729,7 @@ export default function LineField({ density = 1, className }: Props) {
           if (next === -1) break
           commit(next)
         }
-        target = -1
+        targets = []
         pulses = []
         signals = []
         sctx.globalCompositeOperation = 'source-over'
