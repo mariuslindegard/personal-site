@@ -27,7 +27,10 @@ export type Dict = {
     sections: string
   }
   hero: {
-    badge: string
+    /** Short timezone label shown next to the live clock. */
+    clockLabel: string
+    /** Tooltip for the live clock. */
+    clockTitle: string
     titleTop: string
     titleAccent: string
     subtitle: string
@@ -98,11 +101,11 @@ export const en: Dict = {
     sections: 'Sections',
   },
   hero: {
-    badge: 'Personal space',
+    clockLabel: 'Oslo',
+    clockTitle: 'Local time in Oslo',
     titleTop: 'Welcome to my',
-    titleAccent: 'corner of the web',
-    subtitle:
-      'A quiet place on the internet. Scroll on to see what I have been building.',
+    titleAccent: 'corner of the internet',
+    subtitle: 'Scroll on to see what I have built.',
     signIn: 'Sign in with Google',
     restoring: 'Restoring session…',
     scroll: 'Scroll',
@@ -207,11 +210,11 @@ export const no: Dict = {
     sections: 'Seksjoner',
   },
   hero: {
-    badge: 'Min lille plass',
-    titleTop: 'Velkommen til min',
-    titleAccent: 'del av nettet',
-    subtitle:
-      'Et rolig sted på internett. Bla videre for å se hva jeg har bygget.',
+    clockLabel: 'Oslo',
+    clockTitle: 'Lokal tid i Oslo',
+    titleTop: 'Velkommen til mitt',
+    titleAccent: 'internett hjørne',
+    subtitle: 'Bla videre for å se hva jeg har bygget.',
     signIn: 'Logg inn med Google',
     restoring: 'Gjenoppretter økt…',
     scroll: 'Bla',

@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import LineField from '../components/LineField'
 import GoogleIcon from '../components/GoogleIcon'
 import LanguageToggle from '../components/LanguageToggle'
+import LocalClock from '../components/LocalClock'
 import Projects from '../components/Projects'
 import GitHub from '../components/GitHub'
 import About from '../components/About'
@@ -136,11 +137,14 @@ export default function Landing() {
         <Section id="home" ariaLabel={t.nav.home}>
           <div className="flex flex-col items-center text-center">
             <span
-              className="animate-fade-up mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 text-xs tracking-wide text-white/60 backdrop-blur-sm sm:mb-8"
+              className="animate-fade-up mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 font-mono text-xs tracking-wide backdrop-blur-sm sm:mb-8"
               style={{ animationDelay: '0ms' }}
             >
-              <span className="size-1.5 rounded-full bg-accent" />
-              {t.hero.badge}
+              <span
+                aria-hidden="true"
+                className="size-1.5 animate-pulse rounded-full bg-accent"
+              />
+              <LocalClock label={t.hero.clockLabel} title={t.hero.clockTitle} />
             </span>
 
             <h1
