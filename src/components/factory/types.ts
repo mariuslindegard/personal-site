@@ -83,7 +83,7 @@ export type Vehicle = {
   timer: number
 }
 
-export type JobKind = 'haul' | 'pave' | 'construct' | 'demolish' | 'upgrade'
+export type JobKind = 'haul' | 'roadhaul' | 'pave' | 'construct' | 'demolish' | 'upgrade'
 
 export type JobState = 'pending' | 'assigned' | 'done'
 

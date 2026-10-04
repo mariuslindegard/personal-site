@@ -1,4 +1,4 @@
-import { clamp, dist, pointOnPolyline, type Pt } from './geometry'
+import { clamp, dist, type Pt } from './geometry'
 import {
   BUILDINGS,
   DEMOLISH_WORK,
@@ -148,51 +148,74 @@ export function planHaulJobs(world: World, clock: number): void {
 }
 
 export function planRoadJobs(world: World, clock: number): void {
-  let active = 0
+  let deliveries = 0
+  let constructions = 0
   for (const job of world.jobs) {
-    if (job.state !== 'done' && job.kind === 'pave') active++
+    if (job.state === 'done') continue
+    if (job.kind === 'roadhaul') deliveries++
+    if (job.kind === 'pave') constructions++
   }
-  if (active >= MAX_ROAD_BUILDS) return
 
   const cap = maxCapacity(world)
   for (const segment of world.segments) {
     if (segment.built || segment.demolish) continue
-    const already = world.jobs.some(
-      (job) => job.state !== 'done' && job.kind === 'pave' && job.segmentId === segment.id,
-    )
-    if (already) continue
     const mat = segment.tier === 1 ? 0 : segment.tier === 2 ? 1 : 2
+    const materialDone = segment.materialDelivered >= segment.materialRequired
 
-    let source: Building | null = null
-    let reverse = false
-    let bestD = Infinity
-    for (const building of world.buildings) {
-      if (building.state !== 'active') continue
-      if (availableOutput(building, world, mat) <= 0) continue
-      const canForward = Boolean(findPath(world, building.nodeId, segment.a))
-      const canBackward = !canForward && Boolean(findPath(world, building.nodeId, segment.b))
-      if (!canForward && !canBackward) continue
-      const startPt = canForward ? segment.pts[0] : segment.pts[1]
-      const d = dist(building.pos, startPt)
-      if (d >= bestD) continue
-      bestD = d
-      source = building
-      reverse = canBackward
+    if (!materialDone) {
+      if (deliveries >= MAX_ROAD_BUILDS) continue
+      const already = world.jobs.some(
+        (job) =>
+          job.state !== 'done' && job.kind === 'roadhaul' && job.segmentId === segment.id,
+      )
+      if (already) continue
+
+      let source: Building | null = null
+      let reverse = false
+      let bestD = Infinity
+      for (const building of world.buildings) {
+        if (building.state !== 'active') continue
+        if (availableOutput(building, world, mat) <= 0) continue
+        const canForward = Boolean(findPath(world, building.nodeId, segment.a))
+        const canBackward = !canForward && Boolean(findPath(world, building.nodeId, segment.b))
+        if (!canForward && !canBackward) continue
+        const startPt = canForward ? segment.pts[0] : segment.pts[1]
+        const d = dist(building.pos, startPt)
+        if (d >= bestD) continue
+        bestD = d
+        source = building
+        reverse = canBackward
+      }
+      if (!source) continue
+      segment.reverse = reverse
+      const remaining = segment.materialRequired - segment.materialDelivered
+      const qty = Math.min(remaining, cap, availableOutput(source, world, mat))
+      if (qty < 1) continue
+      makeJob(world, {
+        kind: 'roadhaul',
+        mat,
+        qty,
+        sourceId: source.id,
+        segmentId: segment.id,
+        priority: 0,
+        createdAt: clock + Math.random(),
+      })
+      deliveries++
+    } else {
+      if (constructions >= 2) continue
+      const already = world.jobs.some(
+        (job) =>
+          job.state !== 'done' && job.kind === 'pave' && job.segmentId === segment.id,
+      )
+      if (already) continue
+      makeJob(world, {
+        kind: 'pave',
+        segmentId: segment.id,
+        priority: 2,
+        createdAt: clock + Math.random(),
+      })
+      constructions++
     }
-    if (!source) continue
-    segment.reverse = reverse
-    const remaining = segment.materialRequired - segment.materialDelivered
-    const qty = Math.min(remaining, cap, availableOutput(source, world, mat))
-    if (qty < 1) continue
-    makeJob(world, {
-      kind: 'pave',
-      mat,
-      qty,
-      sourceId: source.id,
-      segmentId: segment.id,
-      priority: 0,
-      createdAt: clock + Math.random(),
-    })
   }
 }
 
@@ -349,7 +372,7 @@ export function assignJobs(world: World): void {
     const idle = world.vehicles.filter(
       (vehicle) =>
         vehicle.state === 'idle' &&
-        (job.kind === 'construct' || job.kind === 'demolish'
+        (job.kind === 'construct' || job.kind === 'demolish' || job.kind === 'pave'
           ? vehicle.role === 'builder'
           : vehicle.role === 'hauler'),
     )
@@ -357,42 +380,28 @@ export function assignJobs(world: World): void {
 
     let assigned = false
     for (const vehicle of idle) {
-      if (job.kind === 'haul' || job.kind === 'pave') {
+      if (job.kind === 'haul' || job.kind === 'roadhaul') {
         const source = world.buildingById[job.sourceId]
         if (!source) continue
-        let sourceNode = source.nodeId
-        let destNode = sourceNode
+        let destNode = source.nodeId
+        let sitePos = source.pos
         if (job.kind === 'haul') {
           const dest = world.buildingById[job.destId]
           if (!dest) continue
           destNode = dest.nodeId
+          sitePos = dest.pos
         } else {
           const segment = world.segmentById[job.segmentId]
           if (!segment) continue
           destNode = segment.reverse ? segment.b : segment.a
+          sitePos = segment.reverse ? segment.pts[1] : segment.pts[0]
         }
-        const route = routeHaul(world, vehicle.id, sourceNode, destNode)
-        if (job.kind === 'pave') {
-          const segment = world.segmentById[job.segmentId]
-          if (!segment) continue
-          const start = segment.reverse ? segment.pts[1] : segment.pts[0]
-          const d = segment.reverse
-            ? (1 - segment.progress) * segment.length
-            : segment.progress * segment.length
-          const tip = pointOnPolyline(segment.pts, segment.cum, d)
-          const base = route ? route.path : [source.pos, start]
-          vehicle.path = join(base, [start, tip])
-          vehicle.pathIndex = 0
-          vehicle.loadIndex = route ? route.loadIndex : 0
-          vehicle.speedMul = route ? 1 + SIGNAL_SPEED_BONUS * route.signals : 1
-        } else {
-          const dest = world.buildingById[job.destId]
-          if (!dest) continue
-          vehicle.path = route ? route.path : [source.pos, dest.pos]
-          vehicle.pathIndex = 0
-          vehicle.loadIndex = route ? route.loadIndex : 0
-          vehicle.speedMul = route ? 1 + SIGNAL_SPEED_BONUS * route.signals : 1
-        }
+        const route = routeHaul(world, vehicle.id, source.nodeId, destNode)
+        const base = route ? route.path : [source.pos, sitePos]
+        vehicle.path = job.kind === 'roadhaul' ? join(base, [sitePos]) : base
+        vehicle.pathIndex = 0
+        vehicle.loadIndex = route ? route.loadIndex : 0
+        vehicle.speedMul = route ? 1 + SIGNAL_SPEED_BONUS * route.signals : 1
         vehicle.state = 'toSource'
       } else {
         const vNode = nearestNode(world, vehicle.pos)
@@ -402,6 +411,10 @@ export function assignJobs(world: World): void {
           const segment = world.segmentById[job.segmentId]
           if (!segment) continue
           destNode = segment.a
+        } else if (job.kind === 'pave' && job.segmentId >= 0) {
+          const segment = world.segmentById[job.segmentId]
+          if (!segment) continue
+          destNode = segment.reverse ? segment.b : segment.a
         } else {
           const dest = world.buildingById[job.destId]
           if (!dest) continue
