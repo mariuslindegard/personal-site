@@ -21,7 +21,6 @@ import {
   buildingsConnected,
   components,
   findPath,
-  nearestNode,
   pathPoints,
 } from './network'
 import { requestBuildingDemolition } from './jobs'
@@ -132,12 +131,16 @@ function referencePoint(world: World, key: string, anchor: Pt): Pt {
   return anchor
 }
 
-function isFree(world: World, pos: Pt): boolean {
+function isFree(world: World, pos: Pt, size: number): boolean {
   for (const building of world.buildings) {
     if (dist(building.pos, pos) < BUILDING_SEP) return false
   }
   for (const segment of world.segments) {
-    if (distToSegment(pos, segment.pts[0], segment.pts[segment.pts.length - 1]) < 28) {
+    const clearance = size / 2 + 14
+    if (
+      distToSegment(pos, segment.pts[0], segment.pts[segment.pts.length - 1]) <
+      clearance
+    ) {
       return false
     }
   }
@@ -185,7 +188,7 @@ export function placeSite(
     ) {
       continue
     }
-    if (!isFree(world, pos)) continue
+    if (!isFree(world, pos, def.size)) continue
     chosen = pos
     break
   }
@@ -229,10 +232,35 @@ export function placeSite(
   world.buildings.push(building)
   world.buildingById[building.id] = building
 
-  const other = nearestNode(world, chosen, Infinity, (n) => n.id !== node.id)
+  const nearby = world.nodes
+    .filter((candidate) => candidate.id !== node.id)
+    .sort((a, b) => dist(a.pos, chosen) - dist(b.pos, chosen))
+  let other = nearby[0] ?? null
+  for (const candidate of nearby.slice(0, 6)) {
+    if (!crossesBuilding(world, chosen, candidate.pos, node.id, candidate.id)) {
+      other = candidate
+      break
+    }
+  }
   if (other) addRoad(world, other.pos, chosen, 1, false)
   else world.topoDirty = true
   return building
+}
+
+function crossesBuilding(
+  world: World,
+  a: Pt,
+  b: Pt,
+  ignoreA: number,
+  ignoreB: number,
+): boolean {
+  for (const building of world.buildings) {
+    if (building.state === 'complete') continue
+    if (building.nodeId === ignoreA || building.nodeId === ignoreB) continue
+    const size = BUILDINGS[building.key]?.size ?? 20
+    if (distToSegment(building.pos, a, b) < size / 2 + 10) return true
+  }
+  return false
 }
 
 function connectComponents(world: World): boolean {

@@ -14,7 +14,7 @@ import {
   START_HAULERS,
   depotSlotOffset,
 } from './config'
-import { addNode, addRoad } from './network'
+import { addNode, addRoad, simplifyNetwork } from './network'
 import { createVehicle, updateVehicles } from './fleet'
 import {
   assignJobs,
@@ -429,9 +429,10 @@ export function stepWorld(
     planConveyorJobs(world, clock)
     planDemolishJobs(world, clock)
     planUpgradeJobs(world, clock)
-    planReturnHome(world)
     assignJobs(world)
     cleanupJobs(world)
+    planReturnHome(world)
+    simplifyNetwork(world)
   }
 
   updateVehicles(world, dtMs, clock)

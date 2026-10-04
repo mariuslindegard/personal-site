@@ -1,13 +1,14 @@
 import {
   cumulative,
   dist,
+  distToSegment,
   pointOnPolyline,
   projectParam,
   segmentIntersection,
   type Pt,
 } from './geometry'
-import { ROADS, SNAP_NODE_DIST } from './config'
-import type { RoadNode, RoadSegment, World } from './types'
+import { BUILDINGS, ROADS, SNAP_NODE_DIST } from './config'
+import type { Building, RoadNode, RoadSegment, World } from './types'
 
 export function addNode(
   world: World,
@@ -69,8 +70,21 @@ function makeSegment(
   const a = world.nodeById[aId]
   const b = world.nodeById[bId]
   if (!a || !b || aId === bId) return null
-  const pts = [a.pos, b.pos]
-  const length = dist(a.pos, b.pos)
+  return makeSegmentPts(world, aId, bId, [a.pos, b.pos], tier, built)
+}
+
+function makeSegmentPts(
+  world: World,
+  aId: number,
+  bId: number,
+  pts: Pt[],
+  tier: number,
+  built: boolean,
+): RoadSegment | null {
+  const a = world.nodeById[aId]
+  const b = world.nodeById[bId]
+  if (!a || !b || aId === bId || pts.length < 2) return null
+  const length = cumulative(pts).pop() ?? 0
   if (length < 4) return null
   const def = ROADS[tier] ?? ROADS[1]
   const required = Math.max(1, Math.round(length * def.costPerPx))
@@ -121,6 +135,52 @@ function splitSegment(world: World, segment: RoadSegment, point: Pt): RoadNode {
   return node
 }
 
+function blockedByBuilding(
+  world: World,
+  a: Pt,
+  b: Pt,
+  ignoreNodes: number[],
+): Building | null {
+  for (const building of world.buildings) {
+    if (building.state === 'complete') continue
+    if (ignoreNodes.includes(building.nodeId)) continue
+    const def = BUILDINGS[building.key]
+    if (!def) continue
+    if (distToSegment(building.pos, a, b) < def.size / 2 + 12) return building
+  }
+  return null
+}
+
+function detourVia(world: World, fromId: number, toId: number): RoadNode | null {
+  const from = world.nodeById[fromId]
+  const to = world.nodeById[toId]
+  if (!from || !to) return null
+  const length = dist(from.pos, to.pos)
+  if (length < 70) return null
+  const hit = blockedByBuilding(world, from.pos, to.pos, [fromId, toId])
+  if (!hit) return null
+  const def = BUILDINGS[hit.key]
+  if (!def) return null
+  const perpX = -(to.pos.y - from.pos.y) / length
+  const perpY = (to.pos.x - from.pos.x) / length
+  const mid = {
+    x: (from.pos.x + to.pos.x) / 2,
+    y: (from.pos.y + to.pos.y) / 2,
+  }
+  const side =
+    (hit.pos.x - mid.x) * perpX + (hit.pos.y - mid.y) * perpY >= 0 ? -1 : 1
+  const clearance = def.size / 2 + 30
+  const viaPos = {
+    x: mid.x + perpX * side * clearance,
+    y: mid.y + perpY * side * clearance,
+  }
+  if (blockedByBuilding(world, viaPos, viaPos, [])) return null
+  if (dist(viaPos, from.pos) < 26 || dist(viaPos, to.pos) < 26) return null
+  const existing = nearestNode(world, viaPos, 28)
+  if (existing) return existing
+  return addNode(world, viaPos, 'junction')
+}
+
 export function addRoad(
   world: World,
   aPos: Pt,
@@ -145,11 +205,8 @@ export function addRoad(
     const hit = segmentIntersection(a, b, seg.pts[0], seg.pts[seg.pts.length - 1])
     if (!hit) continue
     if (seg.belt) continue
-    if (!seg.built) {
-      removeSegmentRaw(world, seg)
-      continue
-    }
-    let node = nearestNode(world, hit.point, 5)
+    if (!seg.built) continue
+    let node = nearestNode(world, hit.point, 16)
     if (!node) node = splitSegment(world, seg, hit.point)
     if (!stops.some((s) => s.node.id === node.id)) stops.push({ t: hit.t, node })
   }
@@ -158,7 +215,7 @@ export function addRoad(
     if (node.id === aNode.id || node.id === bNode.id) continue
     const proj = projectParam(a, b, node.pos)
     if (proj.t <= 0.001 || proj.t >= 0.999) continue
-    if (dist(node.pos, proj.point) > 5) continue
+    if (dist(node.pos, proj.point) > 12) continue
     if (!stops.some((s) => s.node.id === node.id)) stops.push({ t: proj.t, node })
   }
 
@@ -169,8 +226,20 @@ export function addRoad(
     const from = chain[i]
     const to = chain[i + 1]
     if (from === to || hasSegment(world, from, to)) continue
-    const seg = makeSegment(world, from, to, tier, built)
-    if (seg) created.push(seg.id)
+    const via = detourVia(world, from, to)
+    if (via && via.id !== from && via.id !== to) {
+      if (!hasSegment(world, from, via.id)) {
+        const first = makeSegment(world, from, via.id, tier, built)
+        if (first) created.push(first.id)
+      }
+      if (!hasSegment(world, via.id, to)) {
+        const second = makeSegment(world, via.id, to, tier, built)
+        if (second) created.push(second.id)
+      }
+    } else {
+      const seg = makeSegment(world, from, to, tier, built)
+      if (seg) created.push(seg.id)
+    }
   }
   return created
 }
@@ -178,6 +247,59 @@ export function addRoad(
 export function removeSegmentById(world: World, id: number): void {
   const segment = world.segmentById[id]
   if (segment) removeSegmentRaw(world, segment)
+}
+
+export function simplifyNetwork(world: World): void {
+  let merges = 0
+  let changed = true
+  while (changed && merges < 40) {
+    changed = false
+    for (const node of world.nodes) {
+      if (node.kind === 'building' || node.signal) continue
+      if (node.segments.length !== 2) continue
+      const s1 = world.segmentById[node.segments[0]]
+      const s2 = world.segmentById[node.segments[1]]
+      if (!s1 || !s2) continue
+      if (!s1.built || !s2.built) continue
+      if (s1.tier !== s2.tier) continue
+      if (s1.belt || s2.belt || s1.demolish || s2.demolish) continue
+      const e1 = s1.a === node.id ? s1.b : s1.a
+      const e2 = s2.a === node.id ? s2.b : s2.a
+      if (e1 === e2) continue
+      const n1 = world.nodeById[e1]
+      const n2 = world.nodeById[e2]
+      if (!n1 || !n2) continue
+      const v1x = n1.pos.x - node.pos.x
+      const v1y = n1.pos.y - node.pos.y
+      const v2x = n2.pos.x - node.pos.x
+      const v2y = n2.pos.y - node.pos.y
+      const m1 = Math.hypot(v1x, v1y)
+      const m2 = Math.hypot(v2x, v2y)
+      if (m1 < 1 || m2 < 1) continue
+      const cos = (v1x * v2x + v1y * v2y) / (m1 * m2)
+      if (cos > -0.965) continue
+      if (hasSegment(world, e1, e2)) continue
+      const traffic = s1.traffic + s2.traffic
+      const tier = s1.tier
+      removeSegmentRaw(world, s1)
+      removeSegmentRaw(world, s2)
+      const merged = makeSegmentPts(
+        world,
+        e1,
+        e2,
+        [n1.pos, node.pos, n2.pos],
+        tier,
+        true,
+      )
+      if (merged) merged.traffic = traffic
+      world.nodes = world.nodes.filter((candidate) => candidate.id !== node.id)
+      world.nodeById[node.id] = undefined
+      world.topoDirty = true
+      merges += 1
+      changed = true
+      break
+    }
+  }
 }
 
 export function findPath(
