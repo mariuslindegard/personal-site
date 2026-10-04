@@ -90,13 +90,29 @@ function drawSegment(g: CanvasRenderingContext2D, segment: RoadSegment) {
     g.lineWidth = blueprintWidth
     strokePath(g, segment.pts)
     g.setLineDash([])
+
+    const startPt = segment.reverse ? b : a
+    const delivered = clamp(
+      segment.materialDelivered / Math.max(1, segment.materialRequired),
+      0,
+      1,
+    )
+    if (delivered > 0) {
+      const d = segment.reverse
+        ? (1 - delivered) * segment.length
+        : delivered * segment.length
+      const matTip = pointOnPolyline(segment.pts, segment.cum, d)
+      g.strokeStyle = 'rgba(228, 190, 120, 0.6)'
+      g.lineWidth = Math.max(2, def.width * 0.5)
+      strokePath(g, [startPt, matTip])
+    }
+
     if (segment.progress > 0) {
       const d = segment.reverse
         ? (1 - segment.progress) * segment.length
         : segment.progress * segment.length
       const tip = pointOnPolyline(segment.pts, segment.cum, d)
-      const startPt = segment.reverse ? b : a
-      g.strokeStyle = rgba(lighten(def.rgb, 30), 0.9)
+      g.strokeStyle = rgba(lighten(def.rgb, 30), 0.95)
       g.lineWidth = def.width
       strokePath(g, [startPt, tip])
     }

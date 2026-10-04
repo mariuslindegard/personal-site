@@ -553,7 +553,7 @@ function routeHaul(
   return {
     path,
     speeds,
-    loadIndex: Math.max(0, first.pts.length - 1),
+    loadIndex: first.pts.length,
     signals: stats.signals,
   }
 }

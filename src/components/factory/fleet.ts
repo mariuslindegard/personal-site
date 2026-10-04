@@ -154,7 +154,7 @@ export function updateVehicles(world: World, dtMs: number, clock: number): void 
       if (vehicle.timer <= 0) {
         const job = jobById(world, vehicle.jobId)
         if (!job) {
-          vehicle.state = 'idle'
+          finish(world, vehicle)
           continue
         }
         const source = world.buildingById[job.sourceId]
@@ -353,7 +353,7 @@ export function updateVehicles(world: World, dtMs: number, clock: number): void 
 
     const job = jobById(world, vehicle.jobId)
     if (!job) {
-      vehicle.state = 'idle'
+      finish(world, vehicle)
       continue
     }
 
