@@ -650,6 +650,39 @@ export function assignJobs(world: World): void {
   }
 }
 
+export function planReturnHome(world: World): void {
+  const depots = world.buildings.filter(
+    (building) => building.key === 'depot' && building.state === 'active',
+  )
+  if (depots.length === 0) return
+
+  for (const vehicle of world.vehicles) {
+    if (vehicle.role !== 'builder') continue
+    if (vehicle.state !== 'idle' || vehicle.jobId >= 0) continue
+    let nearest = depots[0]
+    let nearestD = dist(vehicle.pos, nearest.pos)
+    for (const depot of depots) {
+      const d = dist(vehicle.pos, depot.pos)
+      if (d < nearestD) {
+        nearestD = d
+        nearest = depot
+      }
+    }
+    if (nearestD < 14) continue
+    const vNode = nearestNode(world, vehicle.pos)
+    if (!vNode) continue
+    const path = findPath(world, vNode.id, nearest.nodeId)
+    if (!path) continue
+    const withSpeed = pathPointsWithSpeed(world, path.nodes, path.segments)
+    vehicle.path = withSpeed.pts
+    vehicle.pathSpeed = withSpeed.speeds
+    vehicle.pathIndex = 0
+    vehicle.loadIndex = -1
+    vehicle.speedMul = 1
+    vehicle.state = 'toDepot'
+  }
+}
+
 export function cleanupJobs(world: World): void {
   if (world.jobs.length < 240) return
   world.jobs = world.jobs.filter((job) => job.state !== 'done')

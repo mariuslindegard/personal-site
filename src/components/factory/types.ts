@@ -68,6 +68,7 @@ export type VehicleState =
   | 'toSite'
   | 'working'
   | 'paving'
+  | 'toDepot'
 
 export type Vehicle = {
   id: number

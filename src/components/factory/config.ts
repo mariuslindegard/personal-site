@@ -66,6 +66,18 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     work: 8,
     unlock: 0,
   },
+  depot: {
+    key: 'depot',
+    glyph: 'V',
+    tier: 1,
+    size: 26,
+    rgb: [190, 200, 220],
+    recipe: null,
+    cost: [{ mat: 0, qty: 3 }],
+    buffer: 6,
+    work: 10,
+    unlock: 0,
+  },
   warehouse: {
     key: 'warehouse',
     glyph: 'W',

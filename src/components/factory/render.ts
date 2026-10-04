@@ -80,9 +80,14 @@ function drawSegment(g: CanvasRenderingContext2D, segment: RoadSegment) {
       g.setLineDash([])
     }
   } else {
-    g.setLineDash([3, 5])
-    g.strokeStyle = rgba(def.rgb, 0.3)
-    g.lineWidth = 1.1
+    const blueprintWidth = Math.max(2, def.width * 0.6)
+    g.lineCap = 'round'
+    g.setLineDash([5, 5])
+    g.strokeStyle = rgba(def.rgb, 0.22)
+    g.lineWidth = blueprintWidth + 3
+    strokePath(g, segment.pts)
+    g.strokeStyle = rgba(def.rgb, 0.45)
+    g.lineWidth = blueprintWidth
     strokePath(g, segment.pts)
     g.setLineDash([])
     if (segment.progress > 0) {
@@ -91,12 +96,10 @@ function drawSegment(g: CanvasRenderingContext2D, segment: RoadSegment) {
         : segment.progress * segment.length
       const tip = pointOnPolyline(segment.pts, segment.cum, d)
       const startPt = segment.reverse ? b : a
-      g.lineCap = 'round'
       g.strokeStyle = rgba(lighten(def.rgb, 30), 0.9)
       g.lineWidth = def.width
       strokePath(g, [startPt, tip])
     }
-    void b
   }
 }
 

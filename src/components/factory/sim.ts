@@ -21,6 +21,7 @@ import {
   planConveyorJobs,
   planDemolishJobs,
   planHaulJobs,
+  planReturnHome,
   planRoadJobs,
   planUpgradeJobs,
 } from './jobs'
@@ -131,20 +132,21 @@ export function resetWorld(world: World, env: Env, density: number, clock: numbe
   world.anchor = { x: env.width * 0.46, y: env.height * 0.54 }
 
   const a1 = addStartingBuilding(world, 'extractor', { x: world.anchor.x - 90, y: world.anchor.y + 60 }, clock)
-  addStartingBuilding(world, 'extractor', { x: world.anchor.x + 70, y: world.anchor.y + 110 }, clock)
   addStartingBuilding(world, 'assembly', { x: world.anchor.x + 110, y: world.anchor.y - 70 }, clock)
+  const depot = addStartingBuilding(world, 'depot', { x: world.anchor.x + 20, y: world.anchor.y + 40 }, clock)
 
   addRoad(world, a1.pos, { x: world.anchor.x + 110, y: world.anchor.y - 70 }, 1, false)
+  addRoad(world, depot.pos, { x: world.anchor.x + 110, y: world.anchor.y - 70 }, 1, false)
 
   for (let i = 0; i < START_HAULERS; i++) {
     createVehicle(world, 1, 'hauler', {
-      x: a1.pos.x + i * 14 - 7,
-      y: a1.pos.y + 16,
+      x: depot.pos.x + i * 14 - 7,
+      y: depot.pos.y + 16,
     })
   }
   createVehicle(world, 1, 'builder', {
-    x: a1.pos.x - 16,
-    y: a1.pos.y - 16,
+    x: depot.pos.x - 16,
+    y: depot.pos.y - 16,
   })
 
   buildAmbient(world, env, density)
@@ -401,6 +403,7 @@ export function stepWorld(
     planConveyorJobs(world, clock)
     planDemolishJobs(world, clock)
     planUpgradeJobs(world, clock)
+    planReturnHome(world)
     assignJobs(world)
     cleanupJobs(world)
   }
