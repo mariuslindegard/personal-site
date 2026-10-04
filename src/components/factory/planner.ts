@@ -599,17 +599,30 @@ export function planCity(world: World, env: Env, clock: number): void {
 
   for (let mat = 0; mat < 6; mat++) {
     let consumers = 0
+    let demandRate = 0
     for (const building of world.buildings) {
       if (building.state !== 'active') continue
       const recipe = BUILDINGS[building.key]?.recipe
-      if (recipe?.inputs.some((input) => input.mat === mat)) consumers += 1
+      if (!recipe || recipe.manual) continue
+      for (const input of recipe.inputs) {
+        if (input.mat !== mat) continue
+        consumers += 1
+        demandRate += input.qty / Math.max(1, recipe.time)
+      }
     }
-    if (consumers === 0) continue
+    if (consumers === 0 || demandRate <= 0) continue
 
     let producers = 0
+    let supplyRate = 0
     for (const building of world.buildings) {
       if (building.state === 'complete') continue
-      if (BUILDINGS[building.key]?.recipe?.output?.mat === mat) producers += 1
+      const def = BUILDINGS[building.key]
+      const output = def?.recipe?.output
+      if (output?.mat !== mat) continue
+      producers += 1
+      if (building.state === 'active') {
+        supplyRate += output.qty / Math.max(1, def.recipe?.time ?? 1)
+      }
     }
     const key = producerKeys[mat]
     const def = BUILDINGS[key]
@@ -618,25 +631,7 @@ export function planCity(world: World, env: Env, clock: number): void {
     const target = Math.min(producerMax[mat], consumers + 1)
     if (producers >= target) continue
 
-    let pending = 0
-    for (const job of world.jobs) {
-      if (job.state === 'done') continue
-      if (
-        job.mat === mat &&
-        (job.kind === 'haul' || job.kind === 'roadhaul' || job.kind === 'pave')
-      ) {
-        pending += job.qty
-      }
-    }
-    let buffered = 0
-    for (const building of world.buildings) {
-      if (building.state !== 'active') continue
-      if (BUILDINGS[building.key]?.recipe?.output?.mat === mat) {
-        buffered += building.output[mat] ?? 0
-      }
-    }
-    const scarce = pending > buffered
-    if (!scarce) continue
+    if (supplyRate >= demandRate * 0.95) continue
 
     if (sites < MAX_SITES && total < TOTAL_BUILDING_CAP) {
       placeSite(world, env, key, clock)

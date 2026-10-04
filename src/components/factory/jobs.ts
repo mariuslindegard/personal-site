@@ -180,11 +180,28 @@ export function planHaulJobs(world: World, clock: number): void {
     }
   }
 
-  const stockTarget = 10
+  const stockTarget = 6
   for (const building of world.buildings) {
     if (building.key !== 'warehouse' || building.state !== 'active') continue
     const def = BUILDINGS.warehouse
     for (let mat = 0; mat < 2; mat++) {
+      let starved = false
+      for (const consumer of world.buildings) {
+        if (consumer.state !== 'active') continue
+        const recipe = BUILDINGS[consumer.key]?.recipe
+        if (!recipe || recipe.manual) continue
+        for (const input of recipe.inputs) {
+          if (
+            input.mat === mat &&
+            (consumer.inputs[mat] ?? 0) < input.qty
+          ) {
+            starved = true
+            break
+          }
+        }
+        if (starved) break
+      }
+      if (starved) continue
       const stored = (building.output[mat] ?? 0) + reservedTo(world, building.id, mat)
       if (stored >= stockTarget) continue
       const source = findProducer(world, mat, building)
