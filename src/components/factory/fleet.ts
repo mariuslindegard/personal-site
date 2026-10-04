@@ -9,6 +9,7 @@ import {
   UNLOAD_MS,
   VEHICLES,
   WORK_MS,
+  depotSlotOffset,
 } from './config'
 import { markParallel, removeSegmentById } from './network'
 import type { Job, Vehicle, VehicleRole, World } from './types'
@@ -37,6 +38,8 @@ export function createVehicle(
     pathSpeed: [],
     loadIndex: -1,
     timer: 0,
+    slot: -1,
+    depotId: -1,
   }
   world.vehicles.push(vehicle)
   return vehicle
@@ -147,7 +150,7 @@ export function updateVehicles(world: World, dtMs: number, clock: number): void 
   if (world.vehicles.length === 0) return
 
   for (const vehicle of world.vehicles) {
-    if (vehicle.state === 'idle') continue
+    if (vehicle.state === 'idle' || vehicle.state === 'parked') continue
 
     if (vehicle.state === 'loading') {
       vehicle.timer -= dtMs
@@ -350,6 +353,20 @@ export function updateVehicles(world: World, dtMs: number, clock: number): void 
     }
 
     if (!arrived) continue
+
+    if (vehicle.state === 'toDepot') {
+      const depot = world.buildingById[vehicle.depotId]
+      if (depot && vehicle.slot >= 0) {
+        const offset = depotSlotOffset(vehicle.slot, BUILDINGS.depot.size)
+        vehicle.pos = { x: depot.pos.x + offset.x, y: depot.pos.y + offset.y }
+        vehicle.angle = offset.angle
+      }
+      vehicle.path = []
+      vehicle.pathIndex = 0
+      vehicle.pathSpeed = []
+      vehicle.state = 'parked'
+      continue
+    }
 
     const job = jobById(world, vehicle.jobId)
     if (!job) {

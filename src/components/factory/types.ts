@@ -55,6 +55,7 @@ export type Building = {
   produceAt: number
   idleSince: number
   lastUsed: number
+  slots: (number | null)[]
 }
 
 export type VehicleRole = 'hauler' | 'builder'
@@ -69,6 +70,7 @@ export type VehicleState =
   | 'working'
   | 'paving'
   | 'toDepot'
+  | 'parked'
 
 export type Vehicle = {
   id: number
@@ -87,6 +89,8 @@ export type Vehicle = {
   pathSpeed: number[]
   loadIndex: number
   timer: number
+  slot: number
+  depotId: number
 }
 
 export type JobKind =

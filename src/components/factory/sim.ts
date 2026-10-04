@@ -4,6 +4,7 @@ import {
   CONVEYOR_ITEM_MAX,
   CONVEYOR_ITEM_SPEED,
   CONVEYOR_TRANSFER_MS,
+  DEPOT_SLOTS,
   DISSOLVE_MS,
   LANDMARK_PROGRESS,
   MATERIAL_RGB,
@@ -11,6 +12,7 @@ import {
   PLAN_MS,
   PULSE_MS,
   START_HAULERS,
+  depotSlotOffset,
 } from './config'
 import { addNode, addRoad } from './network'
 import { createVehicle, updateVehicles } from './fleet'
@@ -98,6 +100,7 @@ function addStartingBuilding(
     produceAt: 0,
     idleSince: clock,
     lastUsed: clock,
+    slots: key === 'depot' ? new Array(DEPOT_SLOTS).fill(null) : [],
   }
   node.buildingId = building.id
   world.buildings.push(building)
@@ -148,16 +151,23 @@ export function resetWorld(world: World, env: Env, density: number, clock: numbe
   addRoad(world, a1.pos, { x: world.anchor.x + 110, y: world.anchor.y - 70 }, 1, false)
   addRoad(world, depot.pos, { x: world.anchor.x + 110, y: world.anchor.y - 70 }, 1, false)
 
+  const starters = []
   for (let i = 0; i < START_HAULERS; i++) {
-    createVehicle(world, 1, 'hauler', {
-      x: depot.pos.x + i * 14 - 7,
-      y: depot.pos.y + 16,
-    })
+    starters.push(createVehicle(world, 1, 'hauler', depot.pos))
   }
-  createVehicle(world, 1, 'builder', {
-    x: depot.pos.x - 16,
-    y: depot.pos.y - 16,
-  })
+  starters.push(createVehicle(world, 1, 'builder', depot.pos))
+
+  const depotSize = BUILDINGS.depot.size
+  for (let i = 0; i < starters.length && i < DEPOT_SLOTS; i++) {
+    const vehicle = starters[i]
+    const offset = depotSlotOffset(i, depotSize)
+    vehicle.slot = i
+    vehicle.depotId = depot.id
+    vehicle.pos = { x: depot.pos.x + offset.x, y: depot.pos.y + offset.y }
+    vehicle.angle = offset.angle
+    vehicle.state = 'parked'
+    depot.slots[i] = vehicle.id
+  }
 
   buildAmbient(world, env, density)
 }

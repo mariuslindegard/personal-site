@@ -70,7 +70,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     key: 'depot',
     glyph: 'V',
     tier: 1,
-    size: 26,
+    size: 110,
     rgb: [190, 200, 220],
     recipe: null,
     cost: [{ mat: 0, qty: 3 }],
@@ -248,6 +248,26 @@ export const BUILDER_DEF = {
   speed: 0.072,
   rgb: [240, 220, 150],
   size: 12,
+}
+
+export const DEPOT_SLOTS = 10
+export const DEPOT_COLS = 5
+
+export function depotSlotOffset(
+  index: number,
+  size: number,
+): { x: number; y: number; angle: number } {
+  const cols = DEPOT_COLS
+  const rows = Math.ceil(DEPOT_SLOTS / cols)
+  const cellW = size / cols
+  const cellH = size / rows
+  const col = index % cols
+  const row = Math.floor(index / cols)
+  return {
+    x: -size / 2 + cellW * (col + 0.5),
+    y: -size / 2 + cellH * (row + 0.5),
+    angle: -Math.PI / 2,
+  }
 }
 
 export const MAX_TIER = 6

@@ -1,10 +1,13 @@
 import { clamp, pointOnPolyline, type Pt } from './geometry'
 import {
   BUILDINGS,
+  DEPOT_COLS,
+  DEPOT_SLOTS,
   LANDMARK_PROGRESS,
   MATERIAL_RGB,
   ROADS,
   VEHICLES,
+  depotSlotOffset,
 } from './config'
 import type { Ambient, Building, Particle, Pulse, RoadSegment, Vehicle, World } from './types'
 
@@ -265,11 +268,52 @@ function drawBuilding(
     g.lineWidth = 1.1
     g.stroke()
 
-    g.font = `600 ${Math.round(size * 0.5)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
-    g.textAlign = 'center'
-    g.textBaseline = 'middle'
-    g.fillStyle = rgba(lighten(rgb, 45), 0.95)
-    g.fillText(def.glyph, building.pos.x, building.pos.y + 0.5)
+    if (building.key === 'depot') {
+      const cols = DEPOT_COLS
+      const rows = Math.ceil(DEPOT_SLOTS / cols)
+      const cellW = size / cols
+      const cellH = size / rows
+      let occupied = 0
+      for (let i = 0; i < DEPOT_SLOTS; i++) {
+        const offset = depotSlotOffset(i, size)
+        const x = building.pos.x + offset.x
+        const y = building.pos.y + offset.y
+        const taken = building.slots[i] != null
+        if (taken) occupied += 1
+        g.setLineDash([3, 3])
+        g.strokeStyle = taken
+          ? 'rgba(255, 220, 160, 0.5)'
+          : 'rgba(150, 165, 190, 0.35)'
+        g.lineWidth = 1
+        g.strokeRect(
+          x - cellW * 0.32,
+          y - cellH * 0.34,
+          cellW * 0.64,
+          cellH * 0.68,
+        )
+        g.setLineDash([])
+      }
+      g.font = `600 ${Math.round(size * 0.16)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
+      g.textAlign = 'center'
+      g.textBaseline = 'middle'
+      g.fillStyle = rgba(lighten(rgb, 45), 0.95)
+      g.fillText(def.glyph, building.pos.x, building.pos.y - half + 9)
+      drawHBar(
+        g,
+        building.pos.x - half,
+        building.pos.y + half + 5,
+        size,
+        3,
+        occupied / DEPOT_SLOTS,
+        rgb,
+      )
+    } else {
+      g.font = `600 ${Math.round(size * 0.5)}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`
+      g.textAlign = 'center'
+      g.textBaseline = 'middle'
+      g.fillStyle = rgba(lighten(rgb, 45), 0.95)
+      g.fillText(def.glyph, building.pos.x, building.pos.y + 0.5)
+    }
 
     const recipe = def.recipe
     if (recipe) {

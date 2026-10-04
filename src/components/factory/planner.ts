@@ -6,6 +6,7 @@ import {
   CONVEYOR_MAX,
   CONVEYOR_MIN_BUILDINGS,
   CONVEYOR_WORK,
+  DEPOT_SLOTS,
   HIGHWAY_MIN_BUILDINGS,
   MARGIN,
   MAX_SIGNALS,
@@ -222,6 +223,7 @@ export function placeSite(
     produceAt: 0,
     idleSince: clock,
     lastUsed: clock,
+    slots: key === 'depot' ? new Array(DEPOT_SLOTS).fill(null) : [],
   }
   node.buildingId = building.id
   world.buildings.push(building)

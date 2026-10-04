@@ -7,6 +7,7 @@ import {
   ROADS,
   SIGNAL_SPEED_BONUS,
   WAREHOUSE_IDLE_MS,
+  depotSlotOffset,
 } from './config'
 import { createVehicle } from './fleet'
 import { buildingsConnected, findPath, nearestNode } from './network'
@@ -566,7 +567,7 @@ export function assignJobs(world: World): void {
   for (const job of pending) {
     const idle = world.vehicles.filter(
       (vehicle) =>
-        vehicle.state === 'idle' &&
+        (vehicle.state === 'idle' || vehicle.state === 'parked') &&
         (job.kind === 'construct' || job.kind === 'demolish' || job.kind === 'pave'
           ? vehicle.role === 'builder'
           : vehicle.role === 'hauler'),
@@ -575,6 +576,14 @@ export function assignJobs(world: World): void {
 
     let assigned = false
     for (const vehicle of idle) {
+      if (vehicle.slot >= 0) {
+        const depot = world.buildingById[vehicle.depotId]
+        if (depot && depot.slots[vehicle.slot] === vehicle.id) {
+          depot.slots[vehicle.slot] = null
+        }
+        vehicle.slot = -1
+        vehicle.depotId = -1
+      }
       if (job.kind === 'haul' || job.kind === 'roadhaul') {
         const source = world.buildingById[job.sourceId]
         if (!source) continue
@@ -670,25 +679,45 @@ export function planReturnHome(world: World): void {
   if (depots.length === 0) return
 
   for (const vehicle of world.vehicles) {
-    if (vehicle.role !== 'builder') continue
-    if (vehicle.state !== 'idle' || vehicle.jobId >= 0) continue
-    let nearest = depots[0]
-    let nearestD = dist(vehicle.pos, nearest.pos)
+    if (vehicle.state !== 'idle' || vehicle.jobId >= 0 || vehicle.slot >= 0) continue
+    let nearest: Building | null = null
+    let nearestD = Infinity
+    let slotIndex = -1
     for (const depot of depots) {
+      const free = depot.slots.indexOf(null)
+      if (free < 0) continue
       const d = dist(vehicle.pos, depot.pos)
       if (d < nearestD) {
         nearestD = d
         nearest = depot
+        slotIndex = free
       }
     }
-    if (nearestD < 14) continue
+    if (!nearest) continue
+    nearest.slots[slotIndex] = vehicle.id
+    vehicle.slot = slotIndex
+    vehicle.depotId = nearest.id
+    const offset = depotSlotOffset(slotIndex, BUILDINGS.depot.size)
+    const target = { x: nearest.pos.x + offset.x, y: nearest.pos.y + offset.y }
     const vNode = nearestNode(world, vehicle.pos)
-    if (!vNode) continue
-    const path = findPath(world, vNode.id, nearest.nodeId)
-    if (!path) continue
-    const withSpeed = pathPointsWithSpeed(world, path.nodes, path.segments)
-    vehicle.path = withSpeed.pts
-    vehicle.pathSpeed = withSpeed.speeds
+    const path: Pt[] = []
+    const speeds: number[] = []
+    if (vNode) {
+      const p = findPath(world, vNode.id, nearest.nodeId)
+      if (p) {
+        const withSpeed = pathPointsWithSpeed(world, p.nodes, p.segments)
+        path.push(...withSpeed.pts)
+        speeds.push(...withSpeed.speeds)
+      }
+    }
+    if (path.length === 0) {
+      path.push(vehicle.pos)
+      speeds.push(1)
+    }
+    path.push(target)
+    speeds.push(1)
+    vehicle.path = path
+    vehicle.pathSpeed = speeds
     vehicle.pathIndex = 0
     vehicle.loadIndex = -1
     vehicle.speedMul = 1
