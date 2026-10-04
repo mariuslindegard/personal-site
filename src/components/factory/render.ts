@@ -1,6 +1,7 @@
 import { clamp, pointOnPolyline, type Pt } from './geometry'
 import {
   BUILDINGS,
+  LANDMARK_PROGRESS,
   MATERIAL_RGB,
   ROADS,
   VEHICLES,
@@ -126,7 +127,48 @@ export function drawJunctions(
   }
 }
 
-function drawBuilding(g: CanvasRenderingContext2D, building: Building) {
+function drawHBar(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  p: number,
+  rgb: [number, number, number],
+) {
+  g.fillStyle = 'rgba(9, 11, 19, 0.85)'
+  g.fillRect(x, y, w, h)
+  g.fillStyle = rgba(rgb, 0.9)
+  g.fillRect(x, y, w * clamp(p, 0, 1), h)
+  g.strokeStyle = rgba(rgb, 0.35)
+  g.lineWidth = 0.5
+  g.strokeRect(x, y, w, h)
+}
+
+function drawVBar(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  p: number,
+  rgb: [number, number, number],
+) {
+  g.fillStyle = 'rgba(9, 11, 19, 0.85)'
+  g.fillRect(x, y, w, h)
+  const fill = clamp(p, 0, 1) * h
+  g.fillStyle = rgba(rgb, 0.9)
+  g.fillRect(x, y + h - fill, w, fill)
+  g.strokeStyle = rgba(rgb, 0.35)
+  g.lineWidth = 0.5
+  g.strokeRect(x, y, w, h)
+}
+
+function drawBuilding(
+  g: CanvasRenderingContext2D,
+  building: Building,
+  now: number,
+) {
   const def = BUILDINGS[building.key]
   if (!def) return
   const size = def.size
@@ -169,6 +211,33 @@ function drawBuilding(g: CanvasRenderingContext2D, building: Building) {
       g.lineWidth = 0.9
       g.stroke()
     }
+
+    let need = 0
+    let have = 0
+    for (const cost of building.cost) {
+      need += cost.qty
+      have += Math.min(building.delivered[cost.mat] ?? 0, cost.qty)
+    }
+    if (need > 0) {
+      drawHBar(
+        g,
+        building.pos.x - half,
+        building.pos.y - half - 7,
+        size,
+        2.6,
+        have / need,
+        [228, 178, 108],
+      )
+    }
+    drawHBar(
+      g,
+      building.pos.x - half,
+      building.pos.y + half + 5,
+      size,
+      2.6,
+      done,
+      rgb,
+    )
   } else {
     g.strokeStyle = rgba(rgb, 0.12)
     g.lineWidth = 3.4
@@ -185,31 +254,62 @@ function drawBuilding(g: CanvasRenderingContext2D, building: Building) {
 
     const recipe = def.recipe
     if (recipe) {
-      let x = building.pos.x - half + 3
-      for (const input of recipe.inputs) {
-        const ready = (building.inputs[input.mat] ?? 0) >= input.qty
-        g.fillStyle = ready
-          ? rgba(MATERIAL_RGB[input.mat], 0.95)
-          : rgba(MATERIAL_RGB[input.mat], 0.25)
-        g.fillRect(x, building.pos.y - half - 4.5, 2.6, 2.6)
-        x += 4
-      }
-      if (recipe.output) {
-        const amt = building.output[recipe.output.mat] ?? 0
-        g.fillStyle = rgba(MATERIAL_RGB[recipe.output.mat], amt > 0 ? 0.95 : 0.25)
-        g.fillRect(building.pos.x + half - 5.6, building.pos.y - half - 4.5, 2.6, 2.6)
-      }
+      let progress = 0
       if (recipe.addsProgress) {
-        const p = building.progress / 3
-        g.fillStyle = rgba(rgb, 0.9)
-        g.fillRect(building.pos.x - half, building.pos.y + half + 3, size * clamp(p, 0, 1), 1.6)
+        progress = building.progress / LANDMARK_PROGRESS
+      } else if (building.produceAt !== 0) {
+        progress = 1 - clamp((building.produceAt - now) / recipe.time, 0, 1)
+      }
+      drawHBar(
+        g,
+        building.pos.x - half,
+        building.pos.y - half - 7,
+        size,
+        2.6,
+        progress,
+        lighten(rgb, 40),
+      )
+
+      if (recipe.inputs.length > 0) {
+        let need = 0
+        let have = 0
+        for (const input of recipe.inputs) {
+          need += input.qty
+          have += Math.min(building.inputs[input.mat] ?? 0, input.qty)
+        }
+        drawHBar(
+          g,
+          building.pos.x - half,
+          building.pos.y + half + 5,
+          size,
+          2.6,
+          need > 0 ? have / need : 0,
+          MATERIAL_RGB[recipe.inputs[0].mat],
+        )
+      }
+
+      if (recipe.output) {
+        const amount = building.output[recipe.output.mat] ?? 0
+        drawVBar(
+          g,
+          building.pos.x + half + 4,
+          building.pos.y - half,
+          2.6,
+          size,
+          amount / def.buffer,
+          MATERIAL_RGB[recipe.output.mat],
+        )
       }
     }
   }
 }
 
-export function drawBuildings(g: CanvasRenderingContext2D, world: World) {
-  for (const building of world.buildings) drawBuilding(g, building)
+export function drawBuildings(
+  g: CanvasRenderingContext2D,
+  world: World,
+  now: number,
+) {
+  for (const building of world.buildings) drawBuilding(g, building, now)
 }
 
 function drawVehicle(g: CanvasRenderingContext2D, vehicle: Vehicle) {

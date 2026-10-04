@@ -2,6 +2,7 @@ import { flowAngle, mulberry32, type Pt } from './geometry'
 import {
   BUILDINGS,
   DISSOLVE_MS,
+  LANDMARK_PROGRESS,
   LINGER_MS,
   OUTPUT_CAP,
   PLAN_MS,
@@ -22,7 +23,6 @@ import {
 import { planCity } from './planner'
 import type { Ambient, Building, Env, World } from './types'
 
-const LANDMARK_PROGRESS = 3
 const TRAIL_LENGTH = 12
 
 export function createWorld(anchor: Pt, rng: () => number): World {

@@ -246,5 +246,6 @@ export const MAX_SIGNALS = 8
 export const SIGNAL_SPEED_BONUS = 0.12
 export const DEMOLISH_WORK = 5
 export const ROAD_BUILD_MS = 3200
+export const LANDMARK_PROGRESS = 3
 export const DISSOLVE_MS = 8000
 export const LINGER_MS = 12000
