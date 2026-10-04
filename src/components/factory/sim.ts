@@ -240,6 +240,13 @@ function removeCompleted(world: World): void {
     world.conveyors = world.conveyors.filter(
       (conveyor) => !gone.has(conveyor.fromId) && !gone.has(conveyor.toId),
     )
+    const used = new Set<number>()
+    for (const conveyor of world.conveyors) {
+      for (const id of conveyor.segments) used.add(id)
+    }
+    for (const segment of world.segments) {
+      if (segment.belt && !used.has(segment.id)) segment.belt = false
+    }
   }
 }
 

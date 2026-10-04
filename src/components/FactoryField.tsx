@@ -63,8 +63,8 @@ export default function FactoryField({ density = 1, className }: Props) {
 
       drawRoads(sctx, world)
       drawJunctions(sctx, world, clock)
-      drawBuildings(sctx, world, clock)
       drawConveyors(sctx, world, clock)
+      drawBuildings(sctx, world, clock)
 
       drawVehicles(lctx, world)
       drawPulses(lctx, world.pulses)
@@ -93,8 +93,8 @@ export default function FactoryField({ density = 1, className }: Props) {
       buildStatic(world, env)
       drawRoads(sctx, world)
       drawJunctions(sctx, world, 0)
-      drawBuildings(sctx, world, 0)
       drawConveyors(sctx, world, 0)
+      drawBuildings(sctx, world, 0)
       drawVehicles(sctx, world)
     }
 

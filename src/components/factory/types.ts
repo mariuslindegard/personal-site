@@ -29,6 +29,7 @@ export type RoadSegment = {
   materialDelivered: number
   demolish: boolean
   reverse: boolean
+  belt: boolean
   traffic: number
   age: number
 }

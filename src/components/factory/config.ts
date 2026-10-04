@@ -55,7 +55,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     size: 24,
     rgb: [111, 211, 199],
     recipe: {
-      inputs: [{ mat: 0, qty: 1 }],
+      inputs: [{ mat: 0, qty: 2 }],
       output: { mat: 1, qty: 1 },
       producesVehicle: false,
       addsProgress: 0,
@@ -104,7 +104,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     size: 26,
     rgb: [255, 192, 110],
     recipe: {
-      inputs: [{ mat: 0, qty: 1 }, { mat: 1, qty: 1 }],
+      inputs: [{ mat: 1, qty: 2 }],
       output: { mat: 2, qty: 1 },
       producesVehicle: false,
       addsProgress: 0,
@@ -122,7 +122,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     size: 28,
     rgb: [179, 157, 255],
     recipe: {
-      inputs: [{ mat: 2, qty: 1 }],
+      inputs: [{ mat: 2, qty: 2 }],
       output: { mat: 3, qty: 1 },
       producesVehicle: false,
       addsProgress: 0,
@@ -140,7 +140,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     size: 30,
     rgb: [122, 162, 255],
     recipe: {
-      inputs: [{ mat: 3, qty: 1 }],
+      inputs: [{ mat: 3, qty: 2 }],
       output: { mat: 4, qty: 1 },
       producesVehicle: false,
       addsProgress: 0,
@@ -158,7 +158,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     size: 32,
     rgb: [255, 143, 168],
     recipe: {
-      inputs: [{ mat: 4, qty: 1 }],
+      inputs: [{ mat: 4, qty: 2 }],
       output: { mat: 5, qty: 1 },
       producesVehicle: false,
       addsProgress: 0,
@@ -176,7 +176,7 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     size: 40,
     rgb: [240, 220, 160],
     recipe: {
-      inputs: [{ mat: 5, qty: 1 }],
+      inputs: [{ mat: 5, qty: 2 }],
       output: null,
       producesVehicle: false,
       addsProgress: 1,
@@ -261,14 +261,13 @@ export const ROAD_BUILD_MS = 3200
 export const LANDMARK_PROGRESS = 5
 export const CONVEYOR_COST: MaterialAmount[] = [
   { mat: 1, qty: 2 },
-  { mat: 2, qty: 2 },
-  { mat: 3, qty: 1 },
+  { mat: 2, qty: 1 },
 ]
 export const CONVEYOR_WORK = 14
 export const CONVEYOR_TRANSFER_MS = 1500
 export const CONVEYOR_MAX = 5
 export const CONVEYOR_UNLOCK = 3
-export const CONVEYOR_MIN_BUILDINGS = 10
+export const CONVEYOR_MIN_BUILDINGS = 8
 export const CONVEYOR_STOCK = 10
 export const ROAD_OPTIMIZE_AGE = 60000
 export const CONVEYOR_ITEM_SPEED = 0.05

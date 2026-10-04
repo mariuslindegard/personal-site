@@ -236,7 +236,7 @@ function installSignals(world: World): void {
 }
 
 function maybeBuildConveyor(world: World): void {
-  if ((world.produced[3] ?? 0) < 1) return
+  if ((world.produced[2] ?? 0) < 1) return
   if (world.buildings.length < CONVEYOR_MIN_BUILDINGS) return
   if (world.conveyors.length >= CONVEYOR_MAX) return
   if (world.conveyors.some((conveyor) => !conveyor.built)) return
@@ -267,9 +267,12 @@ function maybeBuildConveyor(world: World): void {
     ) {
       continue
     }
-    const path = findPath(world, candidate.from.nodeId, candidate.to.nodeId)
+    const path = findPath(world, candidate.from.nodeId, candidate.to.nodeId, -1, true)
     if (!path || path.segments.length === 0) continue
     const overlap = world.conveyors.some((conveyor) => {
+      const reversed =
+        conveyor.fromId === candidate.to.id && conveyor.toId === candidate.from.id
+      if (reversed) return false
       const shared = path.segments.filter((id) => conveyor.segments.includes(id)).length
       const shortest = Math.min(path.segments.length, conveyor.segments.length)
       return shortest > 0 && shared / shortest > 0.5
@@ -278,6 +281,28 @@ function maybeBuildConveyor(world: World): void {
 
     const pts = pathPoints(world, path.nodes, path.segments)
     if (pts.length < 2) continue
+    for (const id of path.segments) {
+      const segment = world.segmentById[id]
+      if (segment) segment.belt = true
+    }
+    if (!buildingsConnected(world)) {
+      for (const id of path.segments) {
+        const segment = world.segmentById[id]
+        if (segment) segment.belt = false
+      }
+      const from = candidate.from.pos
+      const to = candidate.to.pos
+      const length = Math.max(1, dist(from, to))
+      const perpX = -(to.y - from.y) / length
+      const perpY = (to.x - from.x) / length
+      const via = {
+        x: (from.x + to.x) / 2 + perpX * 90,
+        y: (from.y + to.y) / 2 + perpY * 90,
+      }
+      addRoad(world, from, via, 1, false)
+      addRoad(world, via, to, 1, false)
+      return
+    }
     const conveyor: Conveyor = {
       id: world.nextConveyorId++,
       fromId: candidate.from.id,
@@ -318,7 +343,7 @@ function optimizeRoads(world: World): void {
   let marked = 0
   for (const segment of world.segments) {
     if (marked >= 2) break
-    if (!segment.built || segment.demolish || segment.tier === 3) continue
+    if (!segment.built || segment.demolish || segment.tier === 3 || segment.belt) continue
     if (segment.age < ROAD_OPTIMIZE_AGE) continue
     if (segment.traffic > 3) continue
     if (!buildingsConnected(world, segment.id)) continue
@@ -390,7 +415,7 @@ export function planCity(world: World, env: Env, clock: number): void {
     const def = BUILDINGS[key]
     if (!def) continue
     if (def.unlock >= 0 && (world.produced[def.unlock] ?? 0) < 1) continue
-    const growth = Math.floor((world.produced[mat] ?? 0) / 260)
+    const growth = Math.floor((world.produced[mat] ?? 0) / 180)
     const target = Math.min(
       producerMax[mat] + growth,
       consumers + 5,

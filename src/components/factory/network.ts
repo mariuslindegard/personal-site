@@ -88,6 +88,7 @@ function makeSegment(
     materialDelivered: built ? required : 0,
     demolish: false,
     reverse: false,
+    belt: false,
     traffic: 0,
     age: 0,
   }
@@ -183,6 +184,7 @@ export function findPath(
   fromId: number,
   toId: number,
   exclude = -1,
+  allowBelt = false,
 ): { nodes: number[]; segments: number[] } | null {
   if (fromId === toId) return { nodes: [fromId], segments: [] }
   const start = world.nodeById[fromId]
@@ -208,6 +210,7 @@ export function findPath(
     for (const sid of node.segments) {
       const seg = world.segmentById[sid]
       if (!seg || !seg.built || seg.id === exclude) continue
+      if (seg.belt && !allowBelt) continue
       const other = seg.a === cur ? seg.b : seg.a
       if (closed.has(other)) continue
       const tentative = (g.get(cur) ?? Infinity) + seg.length
@@ -299,7 +302,7 @@ export function components(world: World, exclude = -1): number[][] {
       for (const sid of n.segments) {
         if (sid === exclude) continue
         const seg = world.segmentById[sid]
-        if (!seg || !seg.built) continue
+        if (!seg || !seg.built || seg.belt) continue
         const other = seg.a === id ? seg.b : seg.a
         if (!seen.has(other)) {
           seen.add(other)
