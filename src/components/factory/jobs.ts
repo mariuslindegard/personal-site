@@ -214,7 +214,12 @@ export function planConveyorJobs(world: World, clock: number): void {
         cost.qty,
     )
     if (needsMaterials) {
-      const anchor = world.buildingById[conveyor.fromId]
+      const from = world.buildingById[conveyor.fromId]
+      const to = world.buildingById[conveyor.toId]
+      let anchor = to
+      if (from?.key === 'warehouse') anchor = from
+      else if (to?.key === 'warehouse') anchor = to
+      else anchor = to ?? from
       if (!anchor) continue
       for (const cost of conveyor.cost) {
         const have =
@@ -222,8 +227,25 @@ export function planConveyorJobs(world: World, clock: number): void {
           reservedToConveyor(world, conveyor.id, cost.mat)
         const need = cost.qty - have
         if (need <= 0) continue
-        const source = findProducer(world, cost.mat, anchor)
+        let source: Building | null = null
+        if (anchor.key === 'warehouse' && (anchor.output[cost.mat] ?? 0) > 0) {
+          source = anchor
+        } else {
+          source = findProducer(world, cost.mat, anchor)
+        }
         if (!source) continue
+        if (source.id !== anchor.id) {
+          world.jobs = world.jobs.filter(
+            (job) =>
+              !(
+                job.state === 'pending' &&
+                job.kind === 'haul' &&
+                job.sourceId === source!.id &&
+                job.mat === cost.mat &&
+                job.priority >= 4
+              ),
+          )
+        }
         const qty = Math.min(need, maxCapacity(world), availableOutput(source, world, cost.mat))
         if (qty < 1) continue
         makeJob(world, {
@@ -233,7 +255,7 @@ export function planConveyorJobs(world: World, clock: number): void {
           sourceId: source.id,
           destId: -1,
           conveyorId: conveyor.id,
-          priority: 1,
+          priority: 0,
           createdAt: clock + Math.random(),
         })
       }

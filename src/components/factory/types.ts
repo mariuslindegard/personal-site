@@ -140,6 +140,7 @@ export type Conveyor = {
   transferAt: number
   pulse: number
   items: number[]
+  createdAt: number
 }
 
 export type Pulse = {

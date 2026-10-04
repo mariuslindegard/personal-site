@@ -292,8 +292,8 @@ export const DEMOLISH_WORK = 5
 export const ROAD_BUILD_MS = 3200
 export const LANDMARK_PROGRESS = 5
 export const CONVEYOR_COST: MaterialAmount[] = [
-  { mat: 1, qty: 2 },
-  { mat: 2, qty: 1 },
+  { mat: 0, qty: 2 },
+  { mat: 1, qty: 1 },
 ]
 export const CONVEYOR_WORK = 14
 export const CONVEYOR_TRANSFER_MS = 1500
