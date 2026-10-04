@@ -223,17 +223,17 @@ export type VehicleDef = {
 }
 
 export const VEHICLES: VehicleDef[] = [
-  { tier: 1, capacity: 1, speed: 0.075, rgb: [180, 200, 255], size: 11 },
-  { tier: 2, capacity: 2, speed: 0.08, rgb: [150, 220, 200], size: 13 },
-  { tier: 3, capacity: 3, speed: 0.086, rgb: [255, 205, 140], size: 15 },
-  { tier: 4, capacity: 4, speed: 0.092, rgb: [205, 185, 255], size: 17 },
-  { tier: 5, capacity: 5, speed: 0.098, rgb: [255, 170, 190], size: 19 },
-  { tier: 6, capacity: 6, speed: 0.105, rgb: [190, 240, 170], size: 21 },
+  { tier: 1, capacity: 1, speed: 0.068, rgb: [180, 200, 255], size: 11 },
+  { tier: 2, capacity: 2, speed: 0.071, rgb: [150, 220, 200], size: 13 },
+  { tier: 3, capacity: 3, speed: 0.074, rgb: [255, 205, 140], size: 15 },
+  { tier: 4, capacity: 4, speed: 0.077, rgb: [205, 185, 255], size: 17 },
+  { tier: 5, capacity: 5, speed: 0.08, rgb: [255, 170, 190], size: 19 },
+  { tier: 6, capacity: 6, speed: 0.083, rgb: [190, 240, 170], size: 21 },
 ]
 
 export const BUILDER_DEF = {
   capacity: 1,
-  speed: 0.08,
+  speed: 0.072,
   rgb: [240, 220, 150],
   size: 12,
 }
@@ -251,11 +251,11 @@ export const UNLOAD_MS = 450
 export const WORK_MS = 240
 export const PULSE_MS = 1050
 export const OUTPUT_CAP = 6
-export const FLEET_MAX = 9
+export const FLEET_MAX = 12
 export const HIGHWAY_MIN_BUILDINGS = 8
 export const HIGHWAY_PARALLEL_DIST = 110
 export const MAX_SIGNALS = 8
-export const SIGNAL_SPEED_BONUS = 0.08
+export const SIGNAL_SPEED_BONUS = 0.06
 export const DEMOLISH_WORK = 5
 export const ROAD_BUILD_MS = 3200
 export const LANDMARK_PROGRESS = 5
@@ -266,11 +266,14 @@ export const CONVEYOR_COST: MaterialAmount[] = [
 ]
 export const CONVEYOR_WORK = 14
 export const CONVEYOR_TRANSFER_MS = 1500
-export const CONVEYOR_MAX = 2
+export const CONVEYOR_MAX = 5
 export const CONVEYOR_UNLOCK = 3
 export const CONVEYOR_MIN_BUILDINGS = 10
 export const CONVEYOR_STOCK = 10
 export const ROAD_OPTIMIZE_AGE = 60000
-export const ROAD_OPTIMIZE_DETOUR = 2.0
+export const CONVEYOR_ITEM_SPEED = 0.05
+export const CONVEYOR_ITEM_MAX = 8
+export const WAREHOUSE_IDLE_MS = 150000
+export const ROAD_OPTIMIZE_DETOUR = 1.8
 export const DISSOLVE_MS = 12000
 export const LINGER_MS = 90000

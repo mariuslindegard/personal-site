@@ -21,10 +21,11 @@ import {
   components,
   findPath,
   nearestNode,
+  pathPoints,
 } from './network'
 import type { Building, Conveyor, Env, World } from './types'
 
-const TOTAL_BUILDING_CAP = 40
+const TOTAL_BUILDING_CAP = 90
 
 function referencePoint(world: World, key: string, anchor: Pt): Pt {
   const def = BUILDINGS[key]
@@ -115,6 +116,7 @@ export function placeSite(
     pulse: 1,
     produceAt: 0,
     idleSince: clock,
+    lastUsed: clock,
   }
   node.buildingId = building.id
   world.buildings.push(building)
@@ -239,7 +241,7 @@ function maybeBuildConveyor(world: World): void {
   if (world.conveyors.length >= CONVEYOR_MAX) return
   if (world.conveyors.some((conveyor) => !conveyor.built)) return
 
-  let best: { from: Building; to: Building; mat: number; d: number } | null = null
+  const candidates: { from: Building; to: Building; mat: number; d: number }[] = []
   for (const consumer of world.buildings) {
     if (consumer.state !== 'active') continue
     const recipe = BUILDINGS[consumer.key]?.recipe
@@ -250,52 +252,66 @@ function maybeBuildConveyor(world: World): void {
         if (BUILDINGS[producer.key]?.recipe?.output?.mat !== input.mat) continue
         const d = dist(producer.pos, consumer.pos)
         if (d < 180) continue
-        if (!best || d > best.d) {
-          best = { from: producer, to: consumer, mat: input.mat, d }
-        }
+        candidates.push({ from: producer, to: consumer, mat: input.mat, d })
       }
     }
   }
-  if (!best) return
-  if (
-    world.conveyors.some(
-      (conveyor) => conveyor.fromId === best!.from.id && conveyor.toId === best!.to.id,
-    )
-  ) {
+  candidates.sort((a, b) => b.d - a.d)
+
+  for (const candidate of candidates.slice(0, 8)) {
+    if (
+      world.conveyors.some(
+        (conveyor) =>
+          conveyor.fromId === candidate.from.id && conveyor.toId === candidate.to.id,
+      )
+    ) {
+      continue
+    }
+    const path = findPath(world, candidate.from.nodeId, candidate.to.nodeId)
+    if (!path || path.segments.length === 0) continue
+    const overlap = world.conveyors.some((conveyor) => {
+      const shared = path.segments.filter((id) => conveyor.segments.includes(id)).length
+      const shortest = Math.min(path.segments.length, conveyor.segments.length)
+      return shortest > 0 && shared / shortest > 0.5
+    })
+    if (overlap) continue
+
+    const pts = pathPoints(world, path.nodes, path.segments)
+    if (pts.length < 2) continue
+    const conveyor: Conveyor = {
+      id: world.nextConveyorId++,
+      fromId: candidate.from.id,
+      toId: candidate.to.id,
+      mat: candidate.mat,
+      pts,
+      cum: cumulative(pts),
+      length: pts.reduce((total, point, index) => {
+        if (index === 0) return 0
+        return total + dist(pts[index - 1], point)
+      }, 0),
+      segments: path.segments.slice(),
+      cost: CONVEYOR_COST.map((cost) => ({ mat: cost.mat, qty: cost.qty })),
+      delivered: {},
+      work: CONVEYOR_WORK,
+      workRequired: CONVEYOR_WORK,
+      progress: 0,
+      built: false,
+      transferAt: 0,
+      pulse: 1,
+      items: [],
+    }
+    world.conveyors.push(conveyor)
+    world.pulses.push({
+      x: pts[0].x,
+      y: pts[0].y,
+      t: 0,
+      max: 22,
+      r: 3,
+      rgb: [160, 220, 255],
+      width: 1,
+    })
     return
   }
-
-  const fromNode = world.nodeById[best.from.nodeId]
-  const toNode = world.nodeById[best.to.nodeId]
-  if (!fromNode || !toNode) return
-  const pts = [fromNode.pos, toNode.pos]
-  const conveyor: Conveyor = {
-    id: world.nextConveyorId++,
-    fromId: best.from.id,
-    toId: best.to.id,
-    mat: best.mat,
-    pts,
-    cum: cumulative(pts),
-    length: dist(pts[0], pts[1]),
-    cost: CONVEYOR_COST.map((cost) => ({ mat: cost.mat, qty: cost.qty })),
-    delivered: {},
-    work: CONVEYOR_WORK,
-    workRequired: CONVEYOR_WORK,
-    progress: 0,
-    built: false,
-    transferAt: 0,
-    pulse: 1,
-  }
-  world.conveyors.push(conveyor)
-  world.pulses.push({
-    x: pts[0].x,
-    y: pts[0].y,
-    t: 0,
-    max: 22,
-    r: 3,
-    rgb: [160, 220, 255],
-    width: 1,
-  })
 }
 
 function optimizeRoads(world: World): void {
@@ -319,8 +335,6 @@ function optimizeRoads(world: World): void {
 }
 
 export function planCity(world: World, env: Env, clock: number): void {
-  if (world.landmarkDone) return
-
   connectComponents(world)
   installSignals(world)
   maybeBuildHighway(world)
@@ -336,8 +350,15 @@ export function planCity(world: World, env: Env, clock: number): void {
   const extractors = world.buildings.filter(
     (b) => b.key === 'extractor' && b.state !== 'complete',
   ).length
-  if (warehouses === 0 && extractors >= 3 && sites < MAX_SITES && total < TOTAL_BUILDING_CAP) {
-    placeSite(world, env, 'warehouse', clock)
+  if (
+    !world.warehouseBuilt &&
+    warehouses === 0 &&
+    extractors >= 3 &&
+    sites < MAX_SITES &&
+    total < TOTAL_BUILDING_CAP
+  ) {
+    const built = placeSite(world, env, 'warehouse', clock)
+    if (built) world.warehouseBuilt = true
     return
   }
 
@@ -369,7 +390,12 @@ export function planCity(world: World, env: Env, clock: number): void {
     const def = BUILDINGS[key]
     if (!def) continue
     if (def.unlock >= 0 && (world.produced[def.unlock] ?? 0) < 1) continue
-    const target = Math.min(producerMax[mat], consumers + 1)
+    const growth = Math.floor((world.produced[mat] ?? 0) / 260)
+    const target = Math.min(
+      producerMax[mat] + growth,
+      consumers + 5,
+      producerMax[mat] + 6,
+    )
     if (producers < target && sites < MAX_SITES && total < TOTAL_BUILDING_CAP) {
       placeSite(world, env, key, clock)
       return

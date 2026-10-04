@@ -6,9 +6,10 @@ import {
   MAX_ROAD_BUILDS,
   ROADS,
   SIGNAL_SPEED_BONUS,
+  WAREHOUSE_IDLE_MS,
 } from './config'
 import { createVehicle } from './fleet'
-import { buildingsConnected, findPath, nearestNode, pathPoints } from './network'
+import { buildingsConnected, findPath, nearestNode } from './network'
 import type { Building, Job, World } from './types'
 
 function maxCapacity(world: World): number {
@@ -327,6 +328,26 @@ export function planRoadJobs(world: World, clock: number): void {
 }
 
 export function planDemolishJobs(world: World, clock: number): void {
+  for (const building of world.buildings) {
+    if (building.key !== 'warehouse' || building.state !== 'active') continue
+    if (clock - building.lastUsed < WAREHOUSE_IDLE_MS) continue
+    let stored = 0
+    for (let mat = 0; mat < 6; mat++) stored += building.output[mat] ?? 0
+    if (stored > 2) continue
+    const already = world.jobs.some(
+      (job) =>
+        job.state !== 'done' && job.kind === 'demolish' && job.destId === building.id,
+    )
+    if (already) continue
+    makeJob(world, {
+      kind: 'demolish',
+      destId: building.id,
+      amount: DEMOLISH_WORK,
+      priority: 2,
+      createdAt: clock,
+    })
+  }
+
   for (const segment of world.segments) {
     if (!segment.demolish || !segment.built) continue
     if (!buildingsConnected(world, segment.id)) {
@@ -449,6 +470,35 @@ function join(a: Pt[], b: Pt[]): Pt[] {
   return out
 }
 
+function pathPointsWithSpeed(
+  world: World,
+  nodes: number[],
+  segments: number[],
+): { pts: Pt[]; speeds: number[] } {
+  const pts: Pt[] = []
+  const speeds: number[] = []
+  for (let i = 0; i < segments.length; i++) {
+    const segment = world.segmentById[segments[i]]
+    if (!segment) continue
+    const forward = segment.a === nodes[i]
+    const sp = forward ? segment.pts : segment.pts.slice().reverse()
+    const mul = ROADS[segment.tier]?.speedMul ?? 1
+    const start = pts.length === 0 ? 0 : 1
+    for (let k = start; k < sp.length; k++) {
+      pts.push(sp[k])
+      speeds.push(mul)
+    }
+  }
+  if (pts.length === 0) {
+    const node = world.nodeById[nodes[0]]
+    if (node) {
+      pts.push(node.pos)
+      speeds.push(1)
+    }
+  }
+  return { pts, speeds }
+}
+
 function segmentStats(
   world: World,
   segments: number[],
@@ -473,7 +523,7 @@ function routeHaul(
   vehicleId: number,
   sourceNode: number,
   destNode: number,
-): { path: Pt[]; loadIndex: number; roadFactor: number; signals: number } | null {
+): { path: Pt[]; speeds: number[]; loadIndex: number; signals: number } | null {
   const vehicle = world.vehicles.find((v) => v.id === vehicleId)
   if (!vehicle) return null
   const vNode = nearestNode(world, vehicle.pos)
@@ -481,13 +531,16 @@ function routeHaul(
   const p1 = findPath(world, vNode.id, sourceNode)
   const p2 = findPath(world, sourceNode, destNode)
   if (!p1 || !p2) return null
-  const pts1 = pathPoints(world, p1.nodes, p1.segments)
-  const pts2 = pathPoints(world, p2.nodes, p2.segments)
+  const first = pathPointsWithSpeed(world, p1.nodes, p1.segments)
+  const second = pathPointsWithSpeed(world, p2.nodes, p2.segments)
   const stats = segmentStats(world, [...p1.segments, ...p2.segments])
+  const path = join(first.pts, second.pts)
+  const speeds = first.speeds.slice()
+  for (let i = 1; i < second.speeds.length; i++) speeds.push(second.speeds[i])
   return {
-    path: join(pts1, pts2),
-    loadIndex: Math.max(0, pts1.length - 1),
-    roadFactor: stats.roadFactor,
+    path,
+    speeds,
+    loadIndex: Math.max(0, first.pts.length - 1),
     signals: stats.signals,
   }
 }
@@ -534,13 +587,19 @@ export function assignJobs(world: World): void {
           sitePos = segment.reverse ? segment.pts[1] : segment.pts[0]
         }
         const route = routeHaul(world, vehicle.id, source.nodeId, destNode)
-        const base = route ? route.path : [source.pos, sitePos]
-        vehicle.path = join(base, [sitePos])
+        if (route) {
+          vehicle.path = join(route.path, [sitePos])
+          vehicle.pathSpeed = route.speeds.slice()
+          vehicle.pathSpeed.push(1)
+          vehicle.loadIndex = route.loadIndex
+          vehicle.speedMul = 1 + SIGNAL_SPEED_BONUS * route.signals
+        } else {
+          vehicle.path = [source.pos, sitePos]
+          vehicle.pathSpeed = [1, 1]
+          vehicle.loadIndex = 0
+          vehicle.speedMul = 1
+        }
         vehicle.pathIndex = 0
-        vehicle.loadIndex = route ? route.loadIndex : 0
-        vehicle.speedMul = route
-          ? route.roadFactor * (1 + SIGNAL_SPEED_BONUS * route.signals)
-          : 1
         vehicle.state = 'toSource'
       } else {
         const vNode = nearestNode(world, vehicle.pos)
@@ -566,12 +625,15 @@ export function assignJobs(world: World): void {
         }
         const p = findPath(world, vNode.id, destNode)
         if (p) {
-          vehicle.path = pathPoints(world, p.nodes, p.segments)
+          const withSpeed = pathPointsWithSpeed(world, p.nodes, p.segments)
+          vehicle.path = withSpeed.pts
+          vehicle.pathSpeed = withSpeed.speeds
           const stats = segmentStats(world, p.segments)
-          vehicle.speedMul = stats.roadFactor * (1 + SIGNAL_SPEED_BONUS * stats.signals)
+          vehicle.speedMul = 1 + SIGNAL_SPEED_BONUS * stats.signals
         } else {
           const target = world.nodeById[destNode]
           vehicle.path = target ? [vehicle.pos, target.pos] : []
+          vehicle.pathSpeed = [1, 1]
           vehicle.speedMul = 1
         }
         vehicle.pathIndex = 0

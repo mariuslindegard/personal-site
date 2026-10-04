@@ -34,6 +34,7 @@ export function createVehicle(
     jobId: -1,
     path: [],
     pathIndex: 0,
+    pathSpeed: [],
     loadIndex: -1,
     timer: 0,
   }
@@ -53,7 +54,8 @@ function advance(vehicle: Vehicle, dtMs: number): boolean {
   while (vehicle.pathIndex < vehicle.path.length) {
     const target = vehicle.path[vehicle.pathIndex]
     const d = dist(vehicle.pos, target)
-    const step = vehicle.speed * vehicle.speedMul * dtMs
+    const road = vehicle.pathSpeed[vehicle.pathIndex] ?? 1
+    const step = vehicle.speed * vehicle.speedMul * road * dtMs
     if (d <= step + 0.5) {
       vehicle.pos = { x: target.x, y: target.y }
       vehicle.pathIndex++
@@ -113,6 +115,7 @@ function finish(world: World, vehicle: Vehicle): void {
   vehicle.state = 'idle'
   vehicle.path = []
   vehicle.pathIndex = 0
+  vehicle.pathSpeed = []
   vehicle.loadIndex = -1
 }
 
@@ -139,7 +142,7 @@ function roadhaulDeposit(world: World, job: Job, vehicle: Vehicle): void {
   setCargo(vehicle, 0, 0)
 }
 
-export function updateVehicles(world: World, dtMs: number): void {
+export function updateVehicles(world: World, dtMs: number, clock: number): void {
   if (world.vehicles.length === 0) return
 
   for (const vehicle of world.vehicles) {
@@ -158,6 +161,7 @@ export function updateVehicles(world: World, dtMs: number): void {
         if (source && (job.kind === 'haul' || job.kind === 'roadhaul')) {
           source.output[job.mat] = Math.max(0, (source.output[job.mat] ?? 0) - qty)
         }
+        if (source && source.key === 'warehouse') source.lastUsed = clock
         setCargo(vehicle, job.mat, qty)
         if (vehicle.pathIndex >= vehicle.path.length) finish(world, vehicle)
         else vehicle.state = 'toDest'
@@ -295,6 +299,10 @@ export function updateVehicles(world: World, dtMs: number): void {
           }
           if (job.amount <= 0) {
             if (job.segmentId >= 0) removeSegmentById(world, job.segmentId)
+            if (job.destId >= 0) {
+              const building = world.buildingById[job.destId]
+              if (building) building.state = 'complete'
+            }
             finish(world, vehicle)
           } else {
             vehicle.timer = WORK_MS
@@ -320,6 +328,7 @@ export function updateVehicles(world: World, dtMs: number): void {
             building.work = 0
             building.state = 'active'
             building.pulse = 1
+            building.lastUsed = clock
             finish(world, vehicle)
           } else {
             vehicle.timer = WORK_MS

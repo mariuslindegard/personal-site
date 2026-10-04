@@ -53,6 +53,7 @@ export type Building = {
   pulse: number
   produceAt: number
   idleSince: number
+  lastUsed: number
 }
 
 export type VehicleRole = 'hauler' | 'builder'
@@ -81,6 +82,7 @@ export type Vehicle = {
   jobId: number
   path: Pt[]
   pathIndex: number
+  pathSpeed: number[]
   loadIndex: number
   timer: number
 }
@@ -122,6 +124,7 @@ export type Conveyor = {
   pts: Pt[]
   cum: number[]
   length: number
+  segments: number[]
   cost: MaterialAmount[]
   delivered: Record<number, number>
   work: number
@@ -130,6 +133,7 @@ export type Conveyor = {
   built: boolean
   transferAt: number
   pulse: number
+  items: number[]
 }
 
 export type Pulse = {
@@ -193,6 +197,7 @@ export type World = {
   landmarkDone: boolean
   highways: number
   signals: number
+  warehouseBuilt: boolean
   topoDirty: boolean
   rng: () => number
 }

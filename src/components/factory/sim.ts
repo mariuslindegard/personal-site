@@ -1,10 +1,12 @@
 import { flowAngle, mulberry32, type Pt } from './geometry'
 import {
   BUILDINGS,
+  CONVEYOR_ITEM_MAX,
+  CONVEYOR_ITEM_SPEED,
   CONVEYOR_TRANSFER_MS,
   DISSOLVE_MS,
   LANDMARK_PROGRESS,
-  LINGER_MS,
+  MATERIAL_RGB,
   OUTPUT_CAP,
   PLAN_MS,
   PULSE_MS,
@@ -57,6 +59,7 @@ export function createWorld(anchor: Pt, rng: () => number): World {
     landmarkDone: false,
     highways: 0,
     signals: 0,
+    warehouseBuilt: false,
     topoDirty: true,
     rng,
   }
@@ -88,6 +91,7 @@ function addStartingBuilding(
     pulse: 1,
     produceAt: 0,
     idleSince: clock,
+    lastUsed: clock,
   }
   node.buildingId = building.id
   world.buildings.push(building)
@@ -121,6 +125,7 @@ export function resetWorld(world: World, env: Env, density: number, clock: numbe
   world.landmarkDone = false
   world.highways = 0
   world.signals = 0
+  world.warehouseBuilt = false
   world.topoDirty = true
   world.lastPlanAt = 0
   world.anchor = { x: env.width * 0.46, y: env.height * 0.54 }
@@ -216,13 +221,26 @@ function updateEffects(world: World, dtMs: number): void {
 
 function removeCompleted(world: World): void {
   if (!world.buildings.some((b) => b.state === 'complete')) return
+  const removed: number[] = []
   world.buildings = world.buildings.filter((building) => {
     if (building.state !== 'complete') return true
+    removed.push(building.id)
     world.buildingById[building.id] = undefined
     const node = world.nodeById[building.nodeId]
     if (node) node.buildingId = -1
     return false
   })
+  if (removed.length > 0) {
+    const gone = new Set(removed)
+    world.jobs = world.jobs.filter(
+      (job) =>
+        job.state === 'done' ||
+        (!gone.has(job.sourceId) && !gone.has(job.destId)),
+    )
+    world.conveyors = world.conveyors.filter(
+      (conveyor) => !gone.has(conveyor.fromId) && !gone.has(conveyor.toId),
+    )
+  }
 }
 
 function updateAmbient(
@@ -309,21 +327,49 @@ export function buildAmbient(world: World, env: Env, density: number): void {
   world.ambient = next
 }
 
-function stepConveyors(world: World, clock: number): void {
+function stepConveyors(world: World, dtMs: number, clock: number): void {
   for (const conveyor of world.conveyors) {
     if (!conveyor.built) continue
-    if (conveyor.pulse > 0) conveyor.pulse = Math.max(0, conveyor.pulse - 0.04)
-    if (clock < conveyor.transferAt) continue
+    if (conveyor.pulse > 0) conveyor.pulse = Math.max(0, conveyor.pulse - dtMs / 400)
     const from = world.buildingById[conveyor.fromId]
     const to = world.buildingById[conveyor.toId]
     if (!from || !to) continue
-    const available = from.output[conveyor.mat] ?? 0
-    const room = OUTPUT_CAP - (to.inputs[conveyor.mat] ?? 0)
-    if (available > 0 && room > 0) {
-      from.output[conveyor.mat] = available - 1
-      to.inputs[conveyor.mat] = (to.inputs[conveyor.mat] ?? 0) + 1
-      conveyor.pulse = 1
-      conveyor.transferAt = clock + CONVEYOR_TRANSFER_MS
+
+    const next: number[] = []
+    for (const at of conveyor.items) {
+      const moved = at + dtMs * CONVEYOR_ITEM_SPEED
+      if (moved >= conveyor.length) {
+        if ((to.inputs[conveyor.mat] ?? 0) < OUTPUT_CAP) {
+          to.inputs[conveyor.mat] = (to.inputs[conveyor.mat] ?? 0) + 1
+          conveyor.pulse = 1
+          world.pulses.push({
+            x: to.pos.x,
+            y: to.pos.y,
+            t: 0,
+            max: 9,
+            r: 3,
+            rgb: MATERIAL_RGB[conveyor.mat] ?? [180, 220, 255],
+            width: 0.7,
+          })
+        } else {
+          next.push(conveyor.length)
+        }
+      } else {
+        next.push(moved)
+      }
+    }
+    conveyor.items = next
+
+    if (
+      clock >= conveyor.transferAt &&
+      conveyor.items.length < CONVEYOR_ITEM_MAX
+    ) {
+      const available = from.output[conveyor.mat] ?? 0
+      if (available > 0) {
+        from.output[conveyor.mat] = available - 1
+        conveyor.items.push(0)
+        conveyor.transferAt = clock + CONVEYOR_TRANSFER_MS
+      }
     }
   }
 }
@@ -336,7 +382,7 @@ export function stepWorld(
   pointer: Pt,
 ): void {
   stepBuildings(world, dtMs, clock)
-  stepConveyors(world, clock)
+  stepConveyors(world, dtMs, clock)
   for (const segment of world.segments) segment.age += dtMs
 
   if (clock - world.lastPlanAt >= PLAN_MS) {
@@ -352,18 +398,10 @@ export function stepWorld(
     cleanupJobs(world)
   }
 
-  updateVehicles(world, dtMs)
+  updateVehicles(world, dtMs, clock)
   updateEffects(world, dtMs)
   removeCompleted(world)
   updateAmbient(world, env, dtMs, clock * 0.00024, pointer)
-
-  if (world.phase === 'grow' && world.landmarkDone && world.dissolveAt === 0) {
-    world.dissolveAt = clock + LINGER_MS
-  }
-  if (world.phase === 'grow' && world.dissolveAt > 0 && clock >= world.dissolveAt) {
-    world.phase = 'dissolve'
-    world.dissolveStart = clock
-  }
 }
 
 export function dissolveFinished(world: World, clock: number): boolean {

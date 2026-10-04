@@ -386,15 +386,16 @@ export function drawConveyors(
   now: number,
 ) {
   for (const conveyor of world.conveyors) {
-    const a = conveyor.pts[0]
-    const b = conveyor.pts[conveyor.pts.length - 1]
+    const pts = conveyor.pts
+    if (pts.length < 2) continue
+
     if (!conveyor.built) {
       g.setLineDash([3, 4])
       g.strokeStyle = 'rgba(160, 220, 255, 0.5)'
       g.lineWidth = 2
       g.beginPath()
-      g.moveTo(a.x, a.y)
-      g.lineTo(b.x, b.y)
+      g.moveTo(pts[0].x, pts[0].y)
+      for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y)
       g.stroke()
       g.setLineDash([])
       let need = 0
@@ -405,11 +406,17 @@ export function drawConveyors(
       }
       if (need > 0 && have > 0) {
         const t = Math.min(1, have / need)
+        const end = pointOnPolyline(pts, conveyor.cum, conveyor.length * t)
         g.strokeStyle = 'rgba(255, 200, 120, 0.9)'
         g.lineWidth = 2
         g.beginPath()
-        g.moveTo(a.x, a.y)
-        g.lineTo(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+        g.moveTo(pts[0].x, pts[0].y)
+        for (let i = 1; i < pts.length; i++) {
+          const next = pts[i]
+          if (conveyor.cum[i] <= conveyor.length * t) g.lineTo(next.x, next.y)
+          else break
+        }
+        g.lineTo(end.x, end.y)
         g.stroke()
       }
       continue
@@ -417,37 +424,38 @@ export function drawConveyors(
 
     const rgb = MATERIAL_RGB[conveyor.mat]
     g.lineCap = 'round'
+    g.lineJoin = 'round'
     g.strokeStyle = 'rgba(60, 70, 92, 0.9)'
     g.lineWidth = 4
     g.beginPath()
-    g.moveTo(a.x, a.y)
-    g.lineTo(b.x, b.y)
+    g.moveTo(pts[0].x, pts[0].y)
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y)
     g.stroke()
-    g.strokeStyle = rgba(rgb, 0.55)
+    g.strokeStyle = rgba(rgb, 0.45)
     g.lineWidth = 2.6
-    g.beginPath()
-    g.moveTo(a.x, a.y)
-    g.lineTo(b.x, b.y)
     g.stroke()
 
-    const length = Math.max(1, conveyor.length)
-    const dirX = (b.x - a.x) / length
-    const dirY = (b.y - a.y) / length
-    const offset = (now * 0.14) % 18
-    g.fillStyle = rgba(rgb, 0.95)
-    for (let d = offset; d < length; d += 18) {
+    for (const at of conveyor.items) {
+      const point = pointOnPolyline(pts, conveyor.cum, at)
+      g.fillStyle = rgba(rgb, 0.35)
       g.beginPath()
-      g.arc(a.x + dirX * d, a.y + dirY * d, 1.8, 0, Math.PI * 2)
+      g.arc(point.x, point.y, 3.2, 0, Math.PI * 2)
+      g.fill()
+      g.fillStyle = rgba(lighten(rgb, 60), 0.98)
+      g.beginPath()
+      g.arc(point.x, point.y, 1.9, 0, Math.PI * 2)
       g.fill()
     }
 
     if (conveyor.pulse > 0) {
+      const mid = pointOnPolyline(pts, conveyor.cum, conveyor.length * 0.5)
       g.beginPath()
-      g.arc((a.x + b.x) / 2, (a.y + b.y) / 2, 4 + (1 - conveyor.pulse) * 10, 0, Math.PI * 2)
+      g.arc(mid.x, mid.y, 4 + (1 - conveyor.pulse) * 10, 0, Math.PI * 2)
       g.strokeStyle = rgba(rgb, conveyor.pulse * 0.5)
       g.lineWidth = 1
       g.stroke()
     }
+    void now
   }
 }
 
