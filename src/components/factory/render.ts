@@ -300,6 +300,27 @@ function drawBuilding(
           MATERIAL_RGB[recipe.output.mat],
         )
       }
+    } else if (building.key === 'warehouse') {
+      let total = 0
+      let dominant = 0
+      let maxAmount = 0
+      for (let mat = 0; mat < 6; mat++) {
+        const amount = building.output[mat] ?? 0
+        total += amount
+        if (amount > maxAmount) {
+          maxAmount = amount
+          dominant = mat
+        }
+      }
+      drawHBar(
+        g,
+        building.pos.x - half,
+        building.pos.y + half + 5,
+        size,
+        2.6,
+        total / def.buffer,
+        MATERIAL_RGB[dominant],
+      )
     }
   }
 }
@@ -357,6 +378,77 @@ function drawVehicle(g: CanvasRenderingContext2D, vehicle: Vehicle) {
 
 export function drawVehicles(g: CanvasRenderingContext2D, world: World) {
   for (const vehicle of world.vehicles) drawVehicle(g, vehicle)
+}
+
+export function drawConveyors(
+  g: CanvasRenderingContext2D,
+  world: World,
+  now: number,
+) {
+  for (const conveyor of world.conveyors) {
+    const a = conveyor.pts[0]
+    const b = conveyor.pts[conveyor.pts.length - 1]
+    if (!conveyor.built) {
+      g.setLineDash([3, 4])
+      g.strokeStyle = 'rgba(160, 220, 255, 0.5)'
+      g.lineWidth = 2
+      g.beginPath()
+      g.moveTo(a.x, a.y)
+      g.lineTo(b.x, b.y)
+      g.stroke()
+      g.setLineDash([])
+      let need = 0
+      let have = 0
+      for (const cost of conveyor.cost) {
+        need += cost.qty
+        have += Math.min(conveyor.delivered[cost.mat] ?? 0, cost.qty)
+      }
+      if (need > 0 && have > 0) {
+        const t = Math.min(1, have / need)
+        g.strokeStyle = 'rgba(255, 200, 120, 0.9)'
+        g.lineWidth = 2
+        g.beginPath()
+        g.moveTo(a.x, a.y)
+        g.lineTo(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)
+        g.stroke()
+      }
+      continue
+    }
+
+    const rgb = MATERIAL_RGB[conveyor.mat]
+    g.lineCap = 'round'
+    g.strokeStyle = 'rgba(60, 70, 92, 0.9)'
+    g.lineWidth = 4
+    g.beginPath()
+    g.moveTo(a.x, a.y)
+    g.lineTo(b.x, b.y)
+    g.stroke()
+    g.strokeStyle = rgba(rgb, 0.55)
+    g.lineWidth = 2.6
+    g.beginPath()
+    g.moveTo(a.x, a.y)
+    g.lineTo(b.x, b.y)
+    g.stroke()
+
+    const length = Math.max(1, conveyor.length)
+    const dirX = (b.x - a.x) / length
+    const dirY = (b.y - a.y) / length
+    const offset = (now * 0.14) % 18
+    g.fillStyle = rgba(rgb, 0.95)
+    for (let d = offset; d < length; d += 18) {
+      g.beginPath()
+      g.arc(a.x + dirX * d, a.y + dirY * d, 1.8, 0, Math.PI * 2)
+      g.fill()
+    }
+
+    if (conveyor.pulse > 0) {
+      g.beginPath()
+      g.arc((a.x + b.x) / 2, (a.y + b.y) / 2, 4 + (1 - conveyor.pulse) * 10, 0, Math.PI * 2)
+      g.strokeStyle = rgba(rgb, conveyor.pulse * 0.5)
+      g.lineWidth = 1
+      g.stroke()
+    }
+  }
 }
 
 export function drawPulses(g: CanvasRenderingContext2D, pulses: Pulse[]) {

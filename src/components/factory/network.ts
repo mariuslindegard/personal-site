@@ -88,6 +88,8 @@ function makeSegment(
     materialDelivered: built ? required : 0,
     demolish: false,
     reverse: false,
+    traffic: 0,
+    age: 0,
   }
   world.segments.push(segment)
   world.segmentById[segment.id] = segment
@@ -180,6 +182,7 @@ export function findPath(
   world: World,
   fromId: number,
   toId: number,
+  exclude = -1,
 ): { nodes: number[]; segments: number[] } | null {
   if (fromId === toId) return { nodes: [fromId], segments: [] }
   const start = world.nodeById[fromId]
@@ -204,7 +207,7 @@ export function findPath(
     if (!node) continue
     for (const sid of node.segments) {
       const seg = world.segmentById[sid]
-      if (!seg || !seg.built) continue
+      if (!seg || !seg.built || seg.id === exclude) continue
       const other = seg.a === cur ? seg.b : seg.a
       if (closed.has(other)) continue
       const tentative = (g.get(cur) ?? Infinity) + seg.length

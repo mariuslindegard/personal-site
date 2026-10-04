@@ -4,6 +4,7 @@ import {
   DEMOLISH_WORK,
   FLEET_MAX,
   MAX_ROAD_BUILDS,
+  ROADS,
   SIGNAL_SPEED_BONUS,
 } from './config'
 import { createVehicle } from './fleet'
@@ -55,6 +56,7 @@ function makeJob(world: World, partial: Partial<Job>): Job {
     destId: -1,
     segmentId: -1,
     buildingId: -1,
+    conveyorId: -1,
     vehicleTier: 0,
     assigned: -1,
     createdAt: world.jobs.length,
@@ -71,9 +73,30 @@ function findSource(
   dest: Building,
 ): Building | null {
   let best: Building | null = null
-  let bestD = Infinity
+  let bestScore = Infinity
   for (const building of world.buildings) {
     if (building.id === dest.id || building.state !== 'active') continue
+    if (availableOutput(building, world, mat) <= 0) continue
+    const score =
+      dist(building.pos, dest.pos) + (building.key === 'warehouse' ? -80 : 120)
+    if (score >= bestScore) continue
+    if (!findPath(world, dest.nodeId, building.nodeId)) continue
+    bestScore = score
+    best = building
+  }
+  return best
+}
+
+function findProducer(
+  world: World,
+  mat: number,
+  dest: Building,
+): Building | null {
+  let best: Building | null = null
+  let bestD = Infinity
+  for (const building of world.buildings) {
+    if (building.key === 'warehouse') continue
+    if (building.state !== 'active') continue
     if (availableOutput(building, world, mat) <= 0) continue
     const d = dist(building.pos, dest.pos)
     if (d >= bestD) continue
@@ -82,6 +105,15 @@ function findSource(
     best = building
   }
   return best
+}
+
+function reservedToConveyor(world: World, conveyorId: number, mat: number): number {
+  let total = 0
+  for (const job of world.jobs) {
+    if (job.state === 'done') continue
+    if (job.conveyorId === conveyorId && job.mat === mat) total += job.qty
+  }
+  return total
 }
 
 export function planHaulJobs(world: World, clock: number): void {
@@ -141,6 +173,81 @@ export function planHaulJobs(world: World, clock: number): void {
           destId: building.id,
           priority: 1,
           createdAt: clock + Math.random(),
+        })
+      }
+    }
+  }
+
+  const stockTarget = 10
+  for (const building of world.buildings) {
+    if (building.key !== 'warehouse' || building.state !== 'active') continue
+    const def = BUILDINGS.warehouse
+    for (let mat = 0; mat < 2; mat++) {
+      const stored = (building.output[mat] ?? 0) + reservedTo(world, building.id, mat)
+      if (stored >= stockTarget) continue
+      const source = findProducer(world, mat, building)
+      if (!source) continue
+      const room = Math.min(stockTarget, def.buffer) - stored
+      const qty = Math.min(room, cap, availableOutput(source, world, mat))
+      if (qty < 1) continue
+      makeJob(world, {
+        kind: 'haul',
+        mat,
+        qty,
+        sourceId: source.id,
+        destId: building.id,
+        priority: 4,
+        createdAt: clock + Math.random(),
+      })
+    }
+  }
+}
+
+export function planConveyorJobs(world: World, clock: number): void {
+  for (const conveyor of world.conveyors) {
+    if (conveyor.built) continue
+    const needsMaterials = conveyor.cost.some(
+      (cost) =>
+        (conveyor.delivered[cost.mat] ?? 0) + reservedToConveyor(world, conveyor.id, cost.mat) <
+        cost.qty,
+    )
+    if (needsMaterials) {
+      const anchor = world.buildingById[conveyor.fromId]
+      if (!anchor) continue
+      for (const cost of conveyor.cost) {
+        const have =
+          (conveyor.delivered[cost.mat] ?? 0) +
+          reservedToConveyor(world, conveyor.id, cost.mat)
+        const need = cost.qty - have
+        if (need <= 0) continue
+        const source = findProducer(world, cost.mat, anchor)
+        if (!source) continue
+        const qty = Math.min(need, maxCapacity(world), availableOutput(source, world, cost.mat))
+        if (qty < 1) continue
+        makeJob(world, {
+          kind: 'haul',
+          mat: cost.mat,
+          qty,
+          sourceId: source.id,
+          destId: -1,
+          conveyorId: conveyor.id,
+          priority: 1,
+          createdAt: clock + Math.random(),
+        })
+      }
+    } else if (conveyor.work > 0) {
+      const already = world.jobs.some(
+        (job) =>
+          job.state !== 'done' &&
+          job.kind === 'buildbelt' &&
+          job.conveyorId === conveyor.id,
+      )
+      if (!already) {
+        makeJob(world, {
+          kind: 'buildbelt',
+          conveyorId: conveyor.id,
+          priority: 2,
+          createdAt: clock,
         })
       }
     }
@@ -342,12 +449,31 @@ function join(a: Pt[], b: Pt[]): Pt[] {
   return out
 }
 
+function segmentStats(
+  world: World,
+  segments: number[],
+): { roadFactor: number; signals: number } {
+  let total = 0
+  let weighted = 0
+  let signals = 0
+  for (const id of segments) {
+    const segment = world.segmentById[id]
+    if (!segment) continue
+    total += segment.length
+    weighted += segment.length * (ROADS[segment.tier]?.speedMul ?? 1)
+    segment.traffic += 1
+    if (world.nodeById[segment.a]?.signal) signals += 1
+    if (world.nodeById[segment.b]?.signal) signals += 1
+  }
+  return { roadFactor: total > 0 ? weighted / total : 1, signals }
+}
+
 function routeHaul(
   world: World,
   vehicleId: number,
   sourceNode: number,
   destNode: number,
-): { path: Pt[]; loadIndex: number; signals: number } | null {
+): { path: Pt[]; loadIndex: number; roadFactor: number; signals: number } | null {
   const vehicle = world.vehicles.find((v) => v.id === vehicleId)
   if (!vehicle) return null
   const vNode = nearestNode(world, vehicle.pos)
@@ -357,10 +483,13 @@ function routeHaul(
   if (!p1 || !p2) return null
   const pts1 = pathPoints(world, p1.nodes, p1.segments)
   const pts2 = pathPoints(world, p2.nodes, p2.segments)
-  let signals = 0
-  for (const id of p1.nodes) if (world.nodeById[id]?.signal) signals++
-  for (const id of p2.nodes) if (world.nodeById[id]?.signal) signals++
-  return { path: join(pts1, pts2), loadIndex: Math.max(0, pts1.length - 1), signals }
+  const stats = segmentStats(world, [...p1.segments, ...p2.segments])
+  return {
+    path: join(pts1, pts2),
+    loadIndex: Math.max(0, pts1.length - 1),
+    roadFactor: stats.roadFactor,
+    signals: stats.signals,
+  }
 }
 
 export function assignJobs(world: World): void {
@@ -386,10 +515,18 @@ export function assignJobs(world: World): void {
         let destNode = source.nodeId
         let sitePos = source.pos
         if (job.kind === 'haul') {
-          const dest = world.buildingById[job.destId]
-          if (!dest) continue
-          destNode = dest.nodeId
-          sitePos = dest.pos
+          if (job.conveyorId >= 0) {
+            const conveyor = world.conveyors.find((c) => c.id === job.conveyorId)
+            const anchor = conveyor ? world.buildingById[conveyor.fromId] : undefined
+            if (!anchor) continue
+            destNode = anchor.nodeId
+            sitePos = anchor.pos
+          } else {
+            const dest = world.buildingById[job.destId]
+            if (!dest) continue
+            destNode = dest.nodeId
+            sitePos = dest.pos
+          }
         } else {
           const segment = world.segmentById[job.segmentId]
           if (!segment) continue
@@ -398,10 +535,12 @@ export function assignJobs(world: World): void {
         }
         const route = routeHaul(world, vehicle.id, source.nodeId, destNode)
         const base = route ? route.path : [source.pos, sitePos]
-        vehicle.path = job.kind === 'roadhaul' ? join(base, [sitePos]) : base
+        vehicle.path = join(base, [sitePos])
         vehicle.pathIndex = 0
         vehicle.loadIndex = route ? route.loadIndex : 0
-        vehicle.speedMul = route ? 1 + SIGNAL_SPEED_BONUS * route.signals : 1
+        vehicle.speedMul = route
+          ? route.roadFactor * (1 + SIGNAL_SPEED_BONUS * route.signals)
+          : 1
         vehicle.state = 'toSource'
       } else {
         const vNode = nearestNode(world, vehicle.pos)
@@ -415,6 +554,11 @@ export function assignJobs(world: World): void {
           const segment = world.segmentById[job.segmentId]
           if (!segment) continue
           destNode = segment.reverse ? segment.b : segment.a
+        } else if (job.kind === 'buildbelt' && job.conveyorId >= 0) {
+          const conveyor = world.conveyors.find((c) => c.id === job.conveyorId)
+          const anchor = conveyor ? world.buildingById[conveyor.fromId] : undefined
+          if (!anchor) continue
+          destNode = anchor.nodeId
         } else {
           const dest = world.buildingById[job.destId]
           if (!dest) continue
@@ -423,9 +567,8 @@ export function assignJobs(world: World): void {
         const p = findPath(world, vNode.id, destNode)
         if (p) {
           vehicle.path = pathPoints(world, p.nodes, p.segments)
-          let signals = 0
-          for (const id of p.nodes) if (world.nodeById[id]?.signal) signals++
-          vehicle.speedMul = 1 + SIGNAL_SPEED_BONUS * signals
+          const stats = segmentStats(world, p.segments)
+          vehicle.speedMul = stats.roadFactor * (1 + SIGNAL_SPEED_BONUS * stats.signals)
         } else {
           const target = world.nodeById[destNode]
           vehicle.path = target ? [vehicle.pos, target.pos] : []

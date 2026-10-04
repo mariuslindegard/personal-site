@@ -29,6 +29,8 @@ export type RoadSegment = {
   materialDelivered: number
   demolish: boolean
   reverse: boolean
+  traffic: number
+  age: number
 }
 
 export type BuildingState = 'site' | 'active' | 'complete'
@@ -83,7 +85,14 @@ export type Vehicle = {
   timer: number
 }
 
-export type JobKind = 'haul' | 'roadhaul' | 'pave' | 'construct' | 'demolish' | 'upgrade'
+export type JobKind =
+  | 'haul'
+  | 'roadhaul'
+  | 'pave'
+  | 'construct'
+  | 'demolish'
+  | 'upgrade'
+  | 'buildbelt'
 
 export type JobState = 'pending' | 'assigned' | 'done'
 
@@ -98,10 +107,29 @@ export type Job = {
   destId: number
   segmentId: number
   buildingId: number
+  conveyorId: number
   vehicleTier: number
   assigned: number
   createdAt: number
   priority: number
+}
+
+export type Conveyor = {
+  id: number
+  fromId: number
+  toId: number
+  mat: number
+  pts: Pt[]
+  cum: number[]
+  length: number
+  cost: MaterialAmount[]
+  delivered: Record<number, number>
+  work: number
+  workRequired: number
+  progress: number
+  built: boolean
+  transferAt: number
+  pulse: number
 }
 
 export type Pulse = {
@@ -145,6 +173,7 @@ export type World = {
   buildingById: (Building | undefined)[]
   vehicles: Vehicle[]
   jobs: Job[]
+  conveyors: Conveyor[]
   ambient: Ambient[]
   pulses: Pulse[]
   particles: Particle[]
@@ -153,6 +182,7 @@ export type World = {
   nextBuildingId: number
   nextVehicleId: number
   nextJobId: number
+  nextConveyorId: number
   produced: number[]
   consumed: number[]
   anchor: Pt

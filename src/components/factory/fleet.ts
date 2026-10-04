@@ -1,5 +1,6 @@
 import { angleOf, clamp, dist, pointOnPolyline, type Pt } from './geometry'
 import {
+  BUILDINGS,
   BUILDER_DEF,
   HIGHWAY_PARALLEL_DIST,
   LOAD_MS,
@@ -69,11 +70,31 @@ function advance(vehicle: Vehicle, dtMs: number): boolean {
 }
 
 function deposit(world: World, job: Job, vehicle: Vehicle): void {
+  if (job.conveyorId >= 0) {
+    const conveyor = world.conveyors.find((c) => c.id === job.conveyorId)
+    if (conveyor) {
+      for (const item of vehicle.cargo) {
+        conveyor.delivered[item.mat] = (conveyor.delivered[item.mat] ?? 0) + item.qty
+      }
+    }
+    setCargo(vehicle, 0, 0)
+    return
+  }
+
   const building = world.buildingById[job.destId]
   if (building) {
+    const cap =
+      building.key === 'warehouse'
+        ? BUILDINGS.warehouse.buffer
+        : OUTPUT_CAP
     for (const item of vehicle.cargo) {
       if (building.state === 'site') {
         building.delivered[item.mat] = (building.delivered[item.mat] ?? 0) + item.qty
+      } else if (building.key === 'warehouse') {
+        building.output[item.mat] = Math.min(
+          cap,
+          (building.output[item.mat] ?? 0) + item.qty,
+        )
       } else {
         building.inputs[item.mat] = Math.min(
           OUTPUT_CAP,
@@ -206,6 +227,48 @@ export function updateVehicles(world: World, dtMs: number): void {
         const job = jobById(world, vehicle.jobId)
         if (!job) {
           finish(world, vehicle)
+          continue
+        }
+
+        if (job.kind === 'buildbelt' && job.conveyorId >= 0) {
+          const conveyor = world.conveyors.find((c) => c.id === job.conveyorId)
+          if (conveyor) {
+            conveyor.work -= 1
+            conveyor.pulse = 0.6
+            const mid = {
+              x: (conveyor.pts[0].x + conveyor.pts[conveyor.pts.length - 1].x) / 2,
+              y: (conveyor.pts[0].y + conveyor.pts[conveyor.pts.length - 1].y) / 2,
+            }
+            world.particles.push({
+              x: mid.x + (Math.random() - 0.5) * 16,
+              y: mid.y + (Math.random() - 0.5) * 16,
+              vx: (Math.random() - 0.5) * 0.014,
+              vy: -0.01 - Math.random() * 0.01,
+              life: 0,
+              max: 900,
+              rgb: [160, 220, 255],
+              size: 1.6,
+            })
+            if (conveyor.work <= 0) {
+              conveyor.work = 0
+              conveyor.built = true
+              conveyor.progress = 1
+              world.pulses.push({
+                x: mid.x,
+                y: mid.y,
+                t: 0,
+                max: 24,
+                r: 4,
+                rgb: [160, 220, 255],
+                width: 1,
+              })
+              finish(world, vehicle)
+            } else {
+              vehicle.timer = WORK_MS
+            }
+          } else {
+            finish(world, vehicle)
+          }
           continue
         }
 

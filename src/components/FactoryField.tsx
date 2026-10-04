@@ -11,6 +11,7 @@ import type { Env, World } from './factory/types'
 import {
   drawAmbient,
   drawBuildings,
+  drawConveyors,
   drawDissolve,
   drawJunctions,
   drawParticles,
@@ -63,6 +64,7 @@ export default function FactoryField({ density = 1, className }: Props) {
       drawRoads(sctx, world)
       drawJunctions(sctx, world, clock)
       drawBuildings(sctx, world, clock)
+      drawConveyors(sctx, world, clock)
 
       drawVehicles(lctx, world)
       drawPulses(lctx, world.pulses)
@@ -92,6 +94,7 @@ export default function FactoryField({ density = 1, className }: Props) {
       drawRoads(sctx, world)
       drawJunctions(sctx, world, 0)
       drawBuildings(sctx, world, 0)
+      drawConveyors(sctx, world, 0)
       drawVehicles(sctx, world)
     }
 

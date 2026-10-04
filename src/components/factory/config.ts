@@ -66,6 +66,18 @@ export const BUILDINGS: Record<string, BuildingDef> = {
     work: 8,
     unlock: 0,
   },
+  warehouse: {
+    key: 'warehouse',
+    glyph: 'W',
+    tier: 1,
+    size: 28,
+    rgb: [170, 190, 220],
+    recipe: null,
+    cost: [{ mat: 0, qty: 4 }],
+    buffer: 24,
+    work: 12,
+    unlock: 0,
+  },
   vehicle: {
     key: 'vehicle',
     glyph: 'C',
@@ -198,8 +210,8 @@ export type RoadDef = {
 
 export const ROADS: Record<number, RoadDef> = {
   1: { tier: 1, width: 2.2, rgb: [120, 130, 150], material: 0, costPerPx: 0.005, speedMul: 1 },
-  2: { tier: 2, width: 3.6, rgb: [130, 175, 195], material: 1, costPerPx: 0.012, speedMul: 1.15 },
-  3: { tier: 3, width: 8, rgb: [228, 178, 108], material: 2, costPerPx: 0.018, speedMul: 1.4 },
+  2: { tier: 2, width: 3.6, rgb: [130, 175, 195], material: 1, costPerPx: 0.012, speedMul: 1.25 },
+  3: { tier: 3, width: 8, rgb: [228, 178, 108], material: 2, costPerPx: 0.018, speedMul: 1.6 },
 }
 
 export type VehicleDef = {
@@ -211,17 +223,17 @@ export type VehicleDef = {
 }
 
 export const VEHICLES: VehicleDef[] = [
-  { tier: 1, capacity: 1, speed: 0.09, rgb: [180, 200, 255], size: 11 },
-  { tier: 2, capacity: 2, speed: 0.1, rgb: [150, 220, 200], size: 13 },
-  { tier: 3, capacity: 3, speed: 0.11, rgb: [255, 205, 140], size: 15 },
-  { tier: 4, capacity: 4, speed: 0.12, rgb: [205, 185, 255], size: 17 },
-  { tier: 5, capacity: 5, speed: 0.13, rgb: [255, 170, 190], size: 19 },
-  { tier: 6, capacity: 6, speed: 0.14, rgb: [190, 240, 170], size: 21 },
+  { tier: 1, capacity: 1, speed: 0.075, rgb: [180, 200, 255], size: 11 },
+  { tier: 2, capacity: 2, speed: 0.08, rgb: [150, 220, 200], size: 13 },
+  { tier: 3, capacity: 3, speed: 0.086, rgb: [255, 205, 140], size: 15 },
+  { tier: 4, capacity: 4, speed: 0.092, rgb: [205, 185, 255], size: 17 },
+  { tier: 5, capacity: 5, speed: 0.098, rgb: [255, 170, 190], size: 19 },
+  { tier: 6, capacity: 6, speed: 0.105, rgb: [190, 240, 170], size: 21 },
 ]
 
 export const BUILDER_DEF = {
   capacity: 1,
-  speed: 0.09,
+  speed: 0.08,
   rgb: [240, 220, 150],
   size: 12,
 }
@@ -243,9 +255,22 @@ export const FLEET_MAX = 9
 export const HIGHWAY_MIN_BUILDINGS = 8
 export const HIGHWAY_PARALLEL_DIST = 110
 export const MAX_SIGNALS = 8
-export const SIGNAL_SPEED_BONUS = 0.12
+export const SIGNAL_SPEED_BONUS = 0.08
 export const DEMOLISH_WORK = 5
 export const ROAD_BUILD_MS = 3200
-export const LANDMARK_PROGRESS = 3
-export const DISSOLVE_MS = 8000
-export const LINGER_MS = 12000
+export const LANDMARK_PROGRESS = 5
+export const CONVEYOR_COST: MaterialAmount[] = [
+  { mat: 1, qty: 2 },
+  { mat: 2, qty: 2 },
+  { mat: 3, qty: 1 },
+]
+export const CONVEYOR_WORK = 14
+export const CONVEYOR_TRANSFER_MS = 1500
+export const CONVEYOR_MAX = 2
+export const CONVEYOR_UNLOCK = 3
+export const CONVEYOR_MIN_BUILDINGS = 10
+export const CONVEYOR_STOCK = 10
+export const ROAD_OPTIMIZE_AGE = 60000
+export const ROAD_OPTIMIZE_DETOUR = 2.0
+export const DISSOLVE_MS = 12000
+export const LINGER_MS = 90000

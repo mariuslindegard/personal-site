@@ -1,6 +1,7 @@
 import { flowAngle, mulberry32, type Pt } from './geometry'
 import {
   BUILDINGS,
+  CONVEYOR_TRANSFER_MS,
   DISSOLVE_MS,
   LANDMARK_PROGRESS,
   LINGER_MS,
@@ -15,6 +16,7 @@ import {
   assignJobs,
   cleanupJobs,
   planConstructJobs,
+  planConveyorJobs,
   planDemolishJobs,
   planHaulJobs,
   planRoadJobs,
@@ -35,6 +37,7 @@ export function createWorld(anchor: Pt, rng: () => number): World {
     buildingById: [],
     vehicles: [],
     jobs: [],
+    conveyors: [],
     ambient: [],
     pulses: [],
     particles: [],
@@ -43,6 +46,7 @@ export function createWorld(anchor: Pt, rng: () => number): World {
     nextBuildingId: 0,
     nextVehicleId: 0,
     nextJobId: 0,
+    nextConveyorId: 0,
     produced: new Array(6).fill(0),
     consumed: new Array(6).fill(0),
     anchor,
@@ -100,6 +104,7 @@ export function resetWorld(world: World, env: Env, density: number, clock: numbe
   world.buildingById = []
   world.vehicles = []
   world.jobs = []
+  world.conveyors = []
   world.pulses = []
   world.particles = []
   world.nextNodeId = 0
@@ -107,6 +112,7 @@ export function resetWorld(world: World, env: Env, density: number, clock: numbe
   world.nextBuildingId = 0
   world.nextVehicleId = 0
   world.nextJobId = 0
+  world.nextConveyorId = 0
   world.produced = new Array(6).fill(0)
   world.consumed = new Array(6).fill(0)
   world.phase = 'grow'
@@ -303,6 +309,25 @@ export function buildAmbient(world: World, env: Env, density: number): void {
   world.ambient = next
 }
 
+function stepConveyors(world: World, clock: number): void {
+  for (const conveyor of world.conveyors) {
+    if (!conveyor.built) continue
+    if (conveyor.pulse > 0) conveyor.pulse = Math.max(0, conveyor.pulse - 0.04)
+    if (clock < conveyor.transferAt) continue
+    const from = world.buildingById[conveyor.fromId]
+    const to = world.buildingById[conveyor.toId]
+    if (!from || !to) continue
+    const available = from.output[conveyor.mat] ?? 0
+    const room = OUTPUT_CAP - (to.inputs[conveyor.mat] ?? 0)
+    if (available > 0 && room > 0) {
+      from.output[conveyor.mat] = available - 1
+      to.inputs[conveyor.mat] = (to.inputs[conveyor.mat] ?? 0) + 1
+      conveyor.pulse = 1
+      conveyor.transferAt = clock + CONVEYOR_TRANSFER_MS
+    }
+  }
+}
+
 export function stepWorld(
   world: World,
   env: Env,
@@ -311,6 +336,8 @@ export function stepWorld(
   pointer: Pt,
 ): void {
   stepBuildings(world, dtMs, clock)
+  stepConveyors(world, clock)
+  for (const segment of world.segments) segment.age += dtMs
 
   if (clock - world.lastPlanAt >= PLAN_MS) {
     world.lastPlanAt = clock
@@ -318,6 +345,7 @@ export function stepWorld(
     planHaulJobs(world, clock)
     planRoadJobs(world, clock)
     planConstructJobs(world, clock)
+    planConveyorJobs(world, clock)
     planDemolishJobs(world, clock)
     planUpgradeJobs(world, clock)
     assignJobs(world)

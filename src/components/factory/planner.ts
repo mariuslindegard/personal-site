@@ -1,15 +1,28 @@
-import { dist, distToSegment, type Pt } from './geometry'
+import { cumulative, dist, distToSegment, type Pt } from './geometry'
 import {
   BUILDINGS,
   BUILDING_SEP,
+  CONVEYOR_COST,
+  CONVEYOR_MAX,
+  CONVEYOR_MIN_BUILDINGS,
+  CONVEYOR_WORK,
   HIGHWAY_MIN_BUILDINGS,
   MARGIN,
   MAX_SIGNALS,
   MAX_SITES,
   PROGRESSION,
+  ROAD_OPTIMIZE_AGE,
+  ROAD_OPTIMIZE_DETOUR,
 } from './config'
-import { addNode, addRoad, components, nearestNode } from './network'
-import type { Building, Env, World } from './types'
+import {
+  addNode,
+  addRoad,
+  buildingsConnected,
+  components,
+  findPath,
+  nearestNode,
+} from './network'
+import type { Building, Conveyor, Env, World } from './types'
 
 const TOTAL_BUILDING_CAP = 40
 
@@ -220,15 +233,113 @@ function installSignals(world: World): void {
   })
 }
 
+function maybeBuildConveyor(world: World): void {
+  if ((world.produced[3] ?? 0) < 1) return
+  if (world.buildings.length < CONVEYOR_MIN_BUILDINGS) return
+  if (world.conveyors.length >= CONVEYOR_MAX) return
+  if (world.conveyors.some((conveyor) => !conveyor.built)) return
+
+  let best: { from: Building; to: Building; mat: number; d: number } | null = null
+  for (const consumer of world.buildings) {
+    if (consumer.state !== 'active') continue
+    const recipe = BUILDINGS[consumer.key]?.recipe
+    if (!recipe) continue
+    for (const input of recipe.inputs) {
+      for (const producer of world.buildings) {
+        if (producer.state !== 'active' || producer.key === 'warehouse') continue
+        if (BUILDINGS[producer.key]?.recipe?.output?.mat !== input.mat) continue
+        const d = dist(producer.pos, consumer.pos)
+        if (d < 180) continue
+        if (!best || d > best.d) {
+          best = { from: producer, to: consumer, mat: input.mat, d }
+        }
+      }
+    }
+  }
+  if (!best) return
+  if (
+    world.conveyors.some(
+      (conveyor) => conveyor.fromId === best!.from.id && conveyor.toId === best!.to.id,
+    )
+  ) {
+    return
+  }
+
+  const fromNode = world.nodeById[best.from.nodeId]
+  const toNode = world.nodeById[best.to.nodeId]
+  if (!fromNode || !toNode) return
+  const pts = [fromNode.pos, toNode.pos]
+  const conveyor: Conveyor = {
+    id: world.nextConveyorId++,
+    fromId: best.from.id,
+    toId: best.to.id,
+    mat: best.mat,
+    pts,
+    cum: cumulative(pts),
+    length: dist(pts[0], pts[1]),
+    cost: CONVEYOR_COST.map((cost) => ({ mat: cost.mat, qty: cost.qty })),
+    delivered: {},
+    work: CONVEYOR_WORK,
+    workRequired: CONVEYOR_WORK,
+    progress: 0,
+    built: false,
+    transferAt: 0,
+    pulse: 1,
+  }
+  world.conveyors.push(conveyor)
+  world.pulses.push({
+    x: pts[0].x,
+    y: pts[0].y,
+    t: 0,
+    max: 22,
+    r: 3,
+    rgb: [160, 220, 255],
+    width: 1,
+  })
+}
+
+function optimizeRoads(world: World): void {
+  let marked = 0
+  for (const segment of world.segments) {
+    if (marked >= 2) break
+    if (!segment.built || segment.demolish || segment.tier === 3) continue
+    if (segment.age < ROAD_OPTIMIZE_AGE) continue
+    if (segment.traffic > 3) continue
+    if (!buildingsConnected(world, segment.id)) continue
+    const detour = findPath(world, segment.a, segment.b, segment.id)
+    if (!detour) continue
+    let detourLength = 0
+    for (const id of detour.segments) {
+      detourLength += world.segmentById[id]?.length ?? 0
+    }
+    if (detourLength > segment.length * ROAD_OPTIMIZE_DETOUR) continue
+    segment.demolish = true
+    marked += 1
+  }
+}
+
 export function planCity(world: World, env: Env, clock: number): void {
   if (world.landmarkDone) return
 
   connectComponents(world)
   installSignals(world)
   maybeBuildHighway(world)
+  maybeBuildConveyor(world)
+  optimizeRoads(world)
 
   const sites = world.buildings.filter((b) => b.state === 'site').length
   const total = world.buildings.length
+
+  const warehouses = world.buildings.filter(
+    (b) => b.key === 'warehouse' && b.state !== 'complete',
+  ).length
+  const extractors = world.buildings.filter(
+    (b) => b.key === 'extractor' && b.state !== 'complete',
+  ).length
+  if (warehouses === 0 && extractors >= 3 && sites < MAX_SITES && total < TOTAL_BUILDING_CAP) {
+    placeSite(world, env, 'warehouse', clock)
+    return
+  }
 
   const producerKeys = [
     'extractor',
