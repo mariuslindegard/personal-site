@@ -48,16 +48,55 @@ function countKey(world: World, key: string): number {
   return count
 }
 
+const DISTRICT_CHAIN: Record<string, string> = {
+  assembly: 'extractor',
+  concrete: 'assembly',
+  systems: 'concrete',
+  design: 'systems',
+  megaplant: 'design',
+}
+
 function ensureDistricts(world: World, env: Env): void {
-  for (let i = 0; i < DISTRICT_KEYS.length; i++) {
-    const key = DISTRICT_KEYS[i]
+  for (const key of DISTRICT_KEYS) {
     if (world.districts[key]) continue
-    if (countKey(world, key) < DISTRICT_MIN) continue
-    const angle = i * 2.39996 + 0.7
-    const radius = Math.max(env.width, env.height) * 0.32
-    world.districts[key] = {
-      x: world.anchor.x + Math.cos(angle) * radius,
-      y: world.anchor.y + Math.sin(angle) * radius,
+    const members = world.buildings.filter(
+      (building) => building.key === key && building.state !== 'complete',
+    )
+    if (members.length < DISTRICT_MIN) continue
+
+    if (key === 'extractor') {
+      let sumX = 0
+      let sumY = 0
+      for (const member of members) {
+        sumX += member.pos.x
+        sumY += member.pos.y
+      }
+      world.districts[key] = { x: sumX / members.length, y: sumY / members.length }
+      return
+    }
+
+    if (key === 'vehicle') {
+      const depot = world.buildings.find((building) => building.key === 'depot')
+      world.districts[key] = depot
+        ? { x: depot.pos.x + 150, y: depot.pos.y - 80 }
+        : world.anchor
+      return
+    }
+
+    const index = DISTRICT_KEYS.indexOf(key)
+    const angle = index * 2.39996 + 0.7
+    const parent = world.districts[DISTRICT_CHAIN[key]]
+    if (parent) {
+      world.districts[key] = {
+        x: parent.x + Math.cos(angle) * 260,
+        y: parent.y + Math.sin(angle) * 260,
+      }
+    } else {
+      const radius = Math.max(env.width, env.height) * 0.32
+      world.districts[key] = {
+        x: world.anchor.x + Math.cos(angle) * radius,
+        y: world.anchor.y + Math.sin(angle) * radius,
+      }
     }
     return
   }
@@ -375,6 +414,15 @@ function maybeBuildConveyor(world: World, clock: number): void {
   if (world.conveyors.length >= CONVEYOR_MAX) return
   if (world.conveyors.some((conveyor) => !conveyor.built)) return
 
+  const producerKeyByMat = [
+    'extractor',
+    'assembly',
+    'concrete',
+    'systems',
+    'design',
+    'megaplant',
+  ]
+
   const candidates: {
     from: Building
     to: Building
@@ -382,46 +430,70 @@ function maybeBuildConveyor(world: World, clock: number): void {
     d: number
     rank: number
   }[] = []
-  for (const consumer of world.buildings) {
-    if (consumer.state !== 'active') continue
-    const recipe = BUILDINGS[consumer.key]?.recipe
-    if (!recipe) continue
-    for (const input of recipe.inputs) {
-      for (const producer of world.buildings) {
-        if (producer.state !== 'active' || producer.key === 'warehouse') continue
-        if (BUILDINGS[producer.key]?.recipe?.output?.mat !== input.mat) continue
-        const d = dist(producer.pos, consumer.pos)
-        if (d < 180) continue
-        candidates.push({ from: producer, to: consumer, mat: input.mat, d, rank: 2 })
-      }
-    }
-  }
-
   const warehouses = world.buildings.filter(
     (building) => building.key === 'warehouse' && building.state === 'active',
   )
+
   for (const warehouse of warehouses) {
-    for (const producer of world.buildings) {
-      if (producer.state !== 'active' || producer.key === 'warehouse') continue
-      const out = BUILDINGS[producer.key]?.recipe?.output
-      if (!out) continue
-      const d = dist(producer.pos, warehouse.pos)
-      if (d > 320) continue
-      candidates.push({ from: producer, to: warehouse, mat: out.mat, d, rank: 0 })
+    let nearestExtractor: Building | null = null
+    let nearestExtractorD = Infinity
+    for (const building of world.buildings) {
+      if (building.state !== 'active' || building.key !== 'extractor') continue
+      const d = dist(building.pos, warehouse.pos)
+      if (d <= 420 && d < nearestExtractorD) {
+        nearestExtractorD = d
+        nearestExtractor = building
+      }
     }
-    for (const consumer of world.buildings) {
-      if (consumer.state !== 'active') continue
-      const recipe = BUILDINGS[consumer.key]?.recipe
-      if (!recipe) continue
-      for (const input of recipe.inputs) {
+    if (nearestExtractor) {
+      candidates.push({
+        from: nearestExtractor,
+        to: warehouse,
+        mat: 0,
+        d: nearestExtractorD,
+        rank: 0,
+      })
+    }
+  }
+
+  for (const consumer of world.buildings) {
+    if (consumer.state !== 'active') continue
+    if (consumer.key === 'vehicle') continue
+    const recipe = BUILDINGS[consumer.key]?.recipe
+    if (!recipe) continue
+    for (const input of recipe.inputs) {
+      const producerKey = producerKeyByMat[input.mat]
+      if (!producerKey) continue
+      let best: Building | null = null
+      let bestD = Infinity
+      for (const warehouse of warehouses) {
         if ((warehouse.output[input.mat] ?? 0) <= 0) continue
         const d = dist(warehouse.pos, consumer.pos)
         if (d < 120) continue
-        candidates.push({ from: warehouse, to: consumer, mat: input.mat, d, rank: 1 })
+        if (d < bestD) {
+          bestD = d
+          best = warehouse
+        }
       }
+      if (!best) {
+        for (const building of world.buildings) {
+          if (building.state !== 'active') continue
+          if (building.key !== producerKey) continue
+          if (BUILDINGS[building.key]?.recipe?.output?.mat !== input.mat) continue
+          const d = dist(building.pos, consumer.pos)
+          if (d < 140) continue
+          if (d < bestD) {
+            bestD = d
+            best = building
+          }
+        }
+      }
+      if (!best) continue
+      const rank = consumer.key === 'assembly' && input.mat === 0 ? 0 : 1
+      candidates.push({ from: best, to: consumer, mat: input.mat, d: bestD, rank })
     }
   }
-  candidates.sort((a, b) => a.rank - b.rank || b.d - a.d)
+  candidates.sort((a, b) => a.rank - b.rank || a.d - b.d)
 
   for (const candidate of candidates.slice(0, 8)) {
     if (
@@ -535,10 +607,10 @@ function expireStuckConveyors(world: World, clock: number): void {
 }
 
 function optimizeRoads(world: World): void {
-  if (world.buildings.length < 30) return
+  if (world.buildings.length < 8) return
   let marked = 0
   for (const segment of world.segments) {
-    if (marked >= 1) break
+    if (marked >= 2) break
     if (!segment.built || segment.demolish || segment.tier === 3 || segment.belt) continue
     if (segment.age < ROAD_OPTIMIZE_AGE) continue
     if (segment.traffic > 0) continue

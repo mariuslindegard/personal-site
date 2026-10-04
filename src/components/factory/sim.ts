@@ -400,7 +400,8 @@ const isWarehouse = to.key === 'warehouse'
       conveyor.items.length < CONVEYOR_ITEM_MAX
     ) {
       const available = from.output[conveyor.mat] ?? 0
-      if (available > 0) {
+      const reserve = from.key === 'warehouse' ? 0 : 1
+      if (available > reserve) {
         from.output[conveyor.mat] = available - 1
         conveyor.items.push(0)
         conveyor.transferAt = clock + CONVEYOR_TRANSFER_MS
