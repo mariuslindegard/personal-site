@@ -203,6 +203,8 @@ export type World = {
   boundsW0: number
   boundsH0: number
   lastExpandAt: number
+  districts: Record<string, Pt>
+  lastRefineAt: number
   topoDirty: boolean
   rng: () => number
 }

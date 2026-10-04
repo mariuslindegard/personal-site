@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { approach, clamp, mulberry32 } from './factory/geometry'
+import { clamp, mulberry32 } from './factory/geometry'
 import {
   buildStatic,
   createWorld,
@@ -55,6 +55,9 @@ export default function FactoryField({ density = 1, className }: Props) {
     let viewScale = 1
     let viewOffX = 0
     let viewOffY = 0
+    let viewCX = 0
+    let viewCY = 0
+    let lastViewAt = 0
 
     const applyTransforms = () => {
       const scale = dpr * viewScale
@@ -83,11 +86,18 @@ export default function FactoryField({ density = 1, className }: Props) {
       const boundsW = Math.max(maxX - minX + margin * 2, width)
       const boundsH = Math.max(maxY - minY + margin * 2, height)
       const target = clamp(Math.min(width / boundsW, height / boundsH), 0.3, 1)
-      viewScale = approach(viewScale, target, 0.01)
       const centerX = (minX + maxX) / 2
       const centerY = (minY + maxY) / 2
-      viewOffX = width / 2 - centerX * viewScale
-      viewOffY = height / 2 - centerY * viewScale
+
+      const dt = clamp(clock - lastViewAt, 0, 100)
+      lastViewAt = clock
+      const ease = 1 - Math.exp(-dt / 700)
+      viewScale += (target - viewScale) * ease
+      viewCX += (centerX - viewCX) * ease
+      viewCY += (centerY - viewCY) * ease
+
+      viewOffX = width / 2 - viewCX * viewScale
+      viewOffY = height / 2 - viewCY * viewScale
       applyTransforms()
     }
 
@@ -124,6 +134,9 @@ export default function FactoryField({ density = 1, className }: Props) {
       viewScale = 1
       viewOffX = 0
       viewOffY = 0
+      viewCX = width * 0.46
+      viewCY = height * 0.54
+      lastViewAt = clock
       world = createWorld({ x: width * 0.46, y: height * 0.54 }, rng)
       resetWorld(world, env, density, clock)
       sctx.setTransform(1, 0, 0, 1, 0, 0)
@@ -138,6 +151,9 @@ export default function FactoryField({ density = 1, className }: Props) {
       viewScale = 1
       viewOffX = 0
       viewOffY = 0
+      viewCX = width * 0.46
+      viewCY = height * 0.54
+      lastViewAt = 0
       world = createWorld({ x: width * 0.46, y: height * 0.54 }, rng)
       buildStatic(world, env)
       sctx.setTransform(1, 0, 0, 1, 0, 0)

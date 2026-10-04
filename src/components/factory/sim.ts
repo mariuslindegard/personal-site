@@ -64,6 +64,8 @@ export function createWorld(anchor: Pt, rng: () => number): World {
     boundsW0: 0,
     boundsH0: 0,
     lastExpandAt: 0,
+    districts: {},
+    lastRefineAt: 0,
     topoDirty: true,
     rng,
   }
@@ -133,6 +135,8 @@ export function resetWorld(world: World, env: Env, density: number, clock: numbe
   world.boundsW0 = env.width
   world.boundsH0 = env.height
   world.lastExpandAt = 0
+  world.districts = {}
+  world.lastRefineAt = 0
   world.topoDirty = true
   world.lastPlanAt = 0
   world.anchor = { x: env.width * 0.46, y: env.height * 0.54 }
@@ -354,21 +358,27 @@ function stepConveyors(world: World, dtMs: number, clock: number): void {
     for (const at of conveyor.items) {
       const moved = at + dtMs * CONVEYOR_ITEM_SPEED
       if (moved >= conveyor.length) {
-        if ((to.inputs[conveyor.mat] ?? 0) < OUTPUT_CAP) {
-          to.inputs[conveyor.mat] = (to.inputs[conveyor.mat] ?? 0) + 1
-          conveyor.pulse = 1
-          world.pulses.push({
-            x: to.pos.x,
-            y: to.pos.y,
-            t: 0,
-            max: 9,
-            r: 3,
-            rgb: MATERIAL_RGB[conveyor.mat] ?? [180, 220, 255],
-            width: 0.7,
-          })
-        } else {
-          next.push(conveyor.length)
-        }
+const isWarehouse = to.key === 'warehouse'
+      const cap = isWarehouse ? BUILDINGS.warehouse.buffer : OUTPUT_CAP
+      const current = isWarehouse
+        ? (to.output[conveyor.mat] ?? 0)
+        : (to.inputs[conveyor.mat] ?? 0)
+      if (current < cap) {
+        if (isWarehouse) to.output[conveyor.mat] = current + 1
+        else to.inputs[conveyor.mat] = current + 1
+        conveyor.pulse = 1
+        world.pulses.push({
+          x: to.pos.x,
+          y: to.pos.y,
+          t: 0,
+          max: 9,
+          r: 3,
+          rgb: MATERIAL_RGB[conveyor.mat] ?? [180, 220, 255],
+          width: 0.7,
+        })
+      } else {
+        next.push(conveyor.length)
+      }
       } else {
         next.push(moved)
       }

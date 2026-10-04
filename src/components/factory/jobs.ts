@@ -328,9 +328,22 @@ export function planRoadJobs(world: World, clock: number): void {
 }
 
 export function planDemolishJobs(world: World, clock: number): void {
+  if (
+    world.jobs.some((job) => job.state !== 'done' && job.kind === 'demolish')
+  ) {
+    return
+  }
   for (const building of world.buildings) {
     if (building.key !== 'warehouse' || building.state !== 'active') continue
     if (clock - building.lastUsed < WAREHOUSE_IDLE_MS) continue
+    let nearDistrict = false
+    for (const key of Object.keys(world.districts)) {
+      if (dist(building.pos, world.districts[key]) < 260) {
+        nearDistrict = true
+        break
+      }
+    }
+    if (nearDistrict) continue
     let stored = 0
     for (let mat = 0; mat < 6; mat++) stored += building.output[mat] ?? 0
     if (stored > 2) continue
@@ -681,6 +694,31 @@ export function planReturnHome(world: World): void {
     vehicle.speedMul = 1
     vehicle.state = 'toDepot'
   }
+}
+
+export function requestBuildingDemolition(
+  world: World,
+  buildingId: number,
+  clock: number,
+): boolean {
+  const already = world.jobs.some(
+    (job) =>
+      job.state !== 'done' && job.kind === 'demolish' && job.destId === buildingId,
+  )
+  if (already) return false
+  if (
+    world.jobs.some((job) => job.state !== 'done' && job.kind === 'demolish')
+  ) {
+    return false
+  }
+  makeJob(world, {
+    kind: 'demolish',
+    destId: buildingId,
+    amount: DEMOLISH_WORK,
+    priority: 2,
+    createdAt: clock,
+  })
+  return true
 }
 
 export function cleanupJobs(world: World): void {

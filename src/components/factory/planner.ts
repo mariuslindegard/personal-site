@@ -23,9 +23,88 @@ import {
   nearestNode,
   pathPoints,
 } from './network'
+import { requestBuildingDemolition } from './jobs'
 import type { Building, Conveyor, Env, World } from './types'
 
 const TOTAL_BUILDING_CAP = 90
+const DISTRICT_KEYS = [
+  'extractor',
+  'assembly',
+  'concrete',
+  'systems',
+  'design',
+  'megaplant',
+  'vehicle',
+]
+const DISTRICT_MIN = 3
+const DISTRICT_RADIUS = 150
+const REFINE_MS = 12000
+
+function countKey(world: World, key: string): number {
+  let count = 0
+  for (const building of world.buildings) {
+    if (building.key === key && building.state !== 'complete') count += 1
+  }
+  return count
+}
+
+function ensureDistricts(world: World, env: Env): void {
+  for (let i = 0; i < DISTRICT_KEYS.length; i++) {
+    const key = DISTRICT_KEYS[i]
+    if (world.districts[key]) continue
+    if (countKey(world, key) < DISTRICT_MIN) continue
+    const angle = i * 2.39996 + 0.7
+    const radius = Math.max(env.width, env.height) * 0.32
+    world.districts[key] = {
+      x: world.anchor.x + Math.cos(angle) * radius,
+      y: world.anchor.y + Math.sin(angle) * radius,
+    }
+    return
+  }
+}
+
+function refineZones(world: World, clock: number): void {
+  if (clock - world.lastRefineAt < REFINE_MS) return
+  world.lastRefineAt = clock
+  if (world.buildings.length < 12) return
+
+  for (const key of DISTRICT_KEYS) {
+    const center = world.districts[key]
+    if (!center) continue
+
+    for (const building of world.buildings) {
+      if (building.state !== 'active') continue
+      if (building.key === key) continue
+      if (
+        building.key === 'depot' ||
+        building.key === 'warehouse' ||
+        building.key === 'landmark'
+      ) {
+        continue
+      }
+      if (dist(building.pos, center) > DISTRICT_RADIUS) continue
+      if (countKey(world, building.key) < 2) continue
+      if (requestBuildingDemolition(world, building.id, clock)) return
+    }
+
+    const members = world.buildings.filter(
+      (building) => building.key === key && building.state === 'active',
+    )
+    if (members.length < 2) continue
+    let far: Building | null = null
+    let farD = 0
+    for (const member of members) {
+      const d = dist(member.pos, center)
+      if (d > farD) {
+        farD = d
+        far = member
+      }
+    }
+    if (far && farD > DISTRICT_RADIUS * 2.2) {
+      if (requestBuildingDemolition(world, far.id, clock)) return
+    }
+  }
+}
 
 function referencePoint(world: World, key: string, anchor: Pt): Pt {
   const def = BUILDINGS[key]
@@ -80,13 +159,19 @@ export function placeSite(
 ): Building | null {
   const def = BUILDINGS[key]
   if (!def) return null
+  const district =
+    world.districts[key] ??
+    (key === 'warehouse' ? world.districts.extractor : undefined)
   const reference =
-    env.rng() < 0.4 ? world.anchor : referencePoint(world, key, world.anchor)
+    district ??
+    (env.rng() < 0.4 ? world.anchor : referencePoint(world, key, world.anchor))
 
   let chosen: Pt | null = null
   for (let attempt = 0; attempt < 90; attempt++) {
     const angle = env.rng() * Math.PI * 2
-    const radius = 92 + def.tier * 8 + attempt * 5 + env.rng() * 45
+    const radius = district
+      ? 24 + attempt * 3 + env.rng() * DISTRICT_RADIUS
+      : 92 + def.tier * 8 + attempt * 5 + env.rng() * 45
     const pos = {
       x: reference.x + Math.cos(angle) * radius,
       y: reference.y + Math.sin(angle) * radius,
@@ -275,6 +360,31 @@ function maybeBuildConveyor(world: World): void {
       }
     }
   }
+
+  const warehouses = world.buildings.filter(
+    (building) => building.key === 'warehouse' && building.state === 'active',
+  )
+  for (const warehouse of warehouses) {
+    for (const producer of world.buildings) {
+      if (producer.state !== 'active' || producer.key === 'warehouse') continue
+      const out = BUILDINGS[producer.key]?.recipe?.output
+      if (!out) continue
+      const d = dist(producer.pos, warehouse.pos)
+      if (d > 320) continue
+      candidates.push({ from: producer, to: warehouse, mat: out.mat, d })
+    }
+    for (const consumer of world.buildings) {
+      if (consumer.state !== 'active') continue
+      const recipe = BUILDINGS[consumer.key]?.recipe
+      if (!recipe) continue
+      for (const input of recipe.inputs) {
+        if ((warehouse.output[input.mat] ?? 0) <= 0) continue
+        const d = dist(warehouse.pos, consumer.pos)
+        if (d < 120) continue
+        candidates.push({ from: warehouse, to: consumer, mat: input.mat, d })
+      }
+    }
+  }
   candidates.sort((a, b) => b.d - a.d)
 
   for (const candidate of candidates.slice(0, 8)) {
@@ -309,8 +419,20 @@ function maybeBuildConveyor(world: World): void {
         const segment = world.segmentById[id]
         if (segment) segment.belt = false
       }
-      if ((world.produced[2] ?? 0) >= 1) {
+      if ((world.produced[2] ?? 0) >= 1 && world.highways < 2) {
         addRoad(world, candidate.from.pos, candidate.to.pos, 3, false)
+      } else {
+        const from = candidate.from.pos
+        const to = candidate.to.pos
+        const length = Math.max(1, dist(from, to))
+        const perpX = -(to.y - from.y) / length
+        const perpY = (to.x - from.x) / length
+        const via = {
+          x: (from.x + to.x) / 2 + perpX * 90,
+          y: (from.y + to.y) / 2 + perpY * 90,
+        }
+        addRoad(world, from, via, 1, false)
+        addRoad(world, via, to, 1, false)
       }
       return
     }
@@ -351,12 +473,13 @@ function maybeBuildConveyor(world: World): void {
 }
 
 function optimizeRoads(world: World): void {
+  if (world.buildings.length < 30) return
   let marked = 0
   for (const segment of world.segments) {
-    if (marked >= 2) break
+    if (marked >= 1) break
     if (!segment.built || segment.demolish || segment.tier === 3 || segment.belt) continue
     if (segment.age < ROAD_OPTIMIZE_AGE) continue
-    if (segment.traffic > 3) continue
+    if (segment.traffic > 0) continue
     if (!buildingsConnected(world, segment.id)) continue
     const detour = findPath(world, segment.a, segment.b, segment.id)
     if (!detour) continue
@@ -372,6 +495,8 @@ function optimizeRoads(world: World): void {
 
 export function planCity(world: World, env: Env, clock: number): void {
   connectComponents(world)
+  ensureDistricts(world, env)
+  refineZones(world, clock)
   installSignals(world)
   maybeBuildHighway(world)
   maybeBuildConveyor(world)
