@@ -144,6 +144,7 @@ export function addRoad(
     if (seg.a === bNode.id || seg.b === bNode.id) continue
     const hit = segmentIntersection(a, b, seg.pts[0], seg.pts[seg.pts.length - 1])
     if (!hit) continue
+    if (seg.belt) continue
     if (!seg.built) {
       removeSegmentRaw(world, seg)
       continue
@@ -213,14 +214,16 @@ export function findPath(
       if (seg.belt && !allowBelt) continue
       const other = seg.a === cur ? seg.b : seg.a
       if (closed.has(other)) continue
-      const tentative = (g.get(cur) ?? Infinity) + seg.length
+      const tentative =
+        (g.get(cur) ?? Infinity) +
+        seg.length / (ROADS[seg.tier]?.speedMul ?? 1)
       if (tentative < (g.get(other) ?? Infinity)) {
         came.set(other, { node: cur, seg: sid })
         g.set(other, tentative)
         const otherNode = world.nodeById[other]
         f.set(
           other,
-          tentative + (otherNode ? dist(otherNode.pos, goal.pos) : 0),
+          tentative + (otherNode ? dist(otherNode.pos, goal.pos) / 1.6 : 0),
         )
         if (!open.includes(other)) open.push(other)
       }

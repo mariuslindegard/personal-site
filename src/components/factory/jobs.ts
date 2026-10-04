@@ -596,7 +596,7 @@ export function assignJobs(world: World): void {
         } else {
           vehicle.path = [source.pos, sitePos]
           vehicle.pathSpeed = [1, 1]
-          vehicle.loadIndex = 0
+          vehicle.loadIndex = 1
           vehicle.speedMul = 1
         }
         vehicle.pathIndex = 0
@@ -684,6 +684,17 @@ export function planReturnHome(world: World): void {
 }
 
 export function cleanupJobs(world: World): void {
-  if (world.jobs.length < 240) return
-  world.jobs = world.jobs.filter((job) => job.state !== 'done')
+  world.jobs = world.jobs.filter((job) => {
+    if (job.state === 'done') return false
+    if (job.sourceId >= 0 && !world.buildingById[job.sourceId]) return false
+    if (job.destId >= 0 && !world.buildingById[job.destId]) return false
+    if (job.segmentId >= 0 && !world.segmentById[job.segmentId]) return false
+    if (
+      job.conveyorId >= 0 &&
+      !world.conveyors.some((conveyor) => conveyor.id === job.conveyorId)
+    ) {
+      return false
+    }
+    return true
+  })
 }

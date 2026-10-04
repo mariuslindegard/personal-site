@@ -200,6 +200,9 @@ export type World = {
   highways: number
   signals: number
   warehouseBuilt: boolean
+  boundsW0: number
+  boundsH0: number
+  lastExpandAt: number
   topoDirty: boolean
   rng: () => number
 }

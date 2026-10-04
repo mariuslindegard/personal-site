@@ -64,6 +64,14 @@ function isFree(world: World, pos: Pt): boolean {
   return true
 }
 
+function maybeExpand(world: World, env: Env, clock: number): void {
+  if (clock - world.lastExpandAt < 2500) return
+  if (env.width >= world.boundsW0 * 4) return
+  env.width *= 1.12
+  env.height *= 1.12
+  world.lastExpandAt = clock
+}
+
 export function placeSite(
   world: World,
   env: Env,
@@ -95,7 +103,19 @@ export function placeSite(
     chosen = pos
     break
   }
-  if (!chosen) return null
+  if (!chosen) {
+    maybeExpand(world, env, clock)
+    return null
+  }
+
+  if (
+    chosen.x < MARGIN * 3 ||
+    chosen.y < MARGIN * 3 ||
+    chosen.x > env.width - MARGIN * 3 ||
+    chosen.y > env.height - MARGIN * 3
+  ) {
+    maybeExpand(world, env, clock)
+  }
 
   const node = addNode(world, chosen, 'building')
   const building: Building = {
@@ -161,47 +181,46 @@ function connectComponents(world: World): boolean {
 }
 
 function maybeBuildHighway(world: World): void {
-  if (world.highways > 0) return
+  if (world.highways >= 2) return
   if ((world.produced[1] ?? 0) < 1) return
   if (world.buildings.length < HIGHWAY_MIN_BUILDINGS) return
 
-  const nodes = world.buildings
-    .filter((building) => building.state === 'active')
-    .map((building) => world.nodeById[building.nodeId])
-    .filter((node): node is NonNullable<typeof node> => Boolean(node))
-  if (nodes.length < 2) return
+  const busy = world.segments
+    .filter((segment) => segment.built && !segment.demolish && !segment.belt && segment.traffic > 0)
+    .sort((a, b) => b.traffic - a.traffic)
+  if (busy.length === 0 || busy[0].traffic < 10) return
 
-  const pairs: { a: (typeof nodes)[number]; b: (typeof nodes)[number]; d: number }[] = []
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      pairs.push({
-        a: nodes[i],
-        b: nodes[j],
-        d: dist(nodes[i].pos, nodes[j].pos),
-      })
+  const points: { id: number; pos: Pt }[] = []
+  for (const segment of busy.slice(0, 12)) {
+    const a = world.nodeById[segment.a]
+    const b = world.nodeById[segment.b]
+    if (a && !points.some((p) => p.id === a.id)) points.push({ id: a.id, pos: a.pos })
+    if (b && !points.some((p) => p.id === b.id)) points.push({ id: b.id, pos: b.pos })
+  }
+  if (points.length < 2) return
+
+  let best: { a: Pt; b: Pt; d: number } | null = null
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 1; j < points.length; j++) {
+      const d = dist(points[i].pos, points[j].pos)
+      if (d < 160 || d > 620) continue
+      if (!best || d > best.d) best = { a: points[i].pos, b: points[j].pos, d }
     }
   }
-  pairs.sort((p, q) => q.d - p.d)
+  if (!best) return
 
-  let attempts = 0
-  for (const pair of pairs) {
-    if (attempts >= 6) break
-    if (pair.d < 160) break
-    attempts++
-    const created = addRoad(world, pair.a.pos, pair.b.pos, 3, false)
-    if (!created || created.length === 0) continue
-    world.highways += 1
-    world.pulses.push({
-      x: pair.a.pos.x,
-      y: pair.a.pos.y,
-      t: 0,
-      max: 26,
-      r: 4,
-      rgb: [228, 178, 108],
-      width: 1.2,
-    })
-    return
-  }
+  const created = addRoad(world, best.a, best.b, 3, false)
+  if (!created || created.length === 0) return
+  world.highways += 1
+  world.pulses.push({
+    x: best.a.x,
+    y: best.a.y,
+    t: 0,
+    max: 26,
+    r: 4,
+    rgb: [228, 178, 108],
+    width: 1.2,
+  })
 }
 
 function installSignals(world: World): void {
@@ -290,17 +309,9 @@ function maybeBuildConveyor(world: World): void {
         const segment = world.segmentById[id]
         if (segment) segment.belt = false
       }
-      const from = candidate.from.pos
-      const to = candidate.to.pos
-      const length = Math.max(1, dist(from, to))
-      const perpX = -(to.y - from.y) / length
-      const perpY = (to.x - from.x) / length
-      const via = {
-        x: (from.x + to.x) / 2 + perpX * 90,
-        y: (from.y + to.y) / 2 + perpY * 90,
+      if ((world.produced[2] ?? 0) >= 1) {
+        addRoad(world, candidate.from.pos, candidate.to.pos, 3, false)
       }
-      addRoad(world, from, via, 1, false)
-      addRoad(world, via, to, 1, false)
       return
     }
     const conveyor: Conveyor = {
@@ -415,13 +426,30 @@ export function planCity(world: World, env: Env, clock: number): void {
     const def = BUILDINGS[key]
     if (!def) continue
     if (def.unlock >= 0 && (world.produced[def.unlock] ?? 0) < 1) continue
-    const growth = Math.floor((world.produced[mat] ?? 0) / 180)
-    const target = Math.min(
-      producerMax[mat] + growth,
-      consumers + 5,
-      producerMax[mat] + 6,
-    )
-    if (producers < target && sites < MAX_SITES && total < TOTAL_BUILDING_CAP) {
+    const target = Math.min(producerMax[mat], consumers + 1)
+    if (producers >= target) continue
+
+    let pending = 0
+    for (const job of world.jobs) {
+      if (job.state === 'done') continue
+      if (
+        job.mat === mat &&
+        (job.kind === 'haul' || job.kind === 'roadhaul' || job.kind === 'pave')
+      ) {
+        pending += job.qty
+      }
+    }
+    let buffered = 0
+    for (const building of world.buildings) {
+      if (building.state !== 'active') continue
+      if (BUILDINGS[building.key]?.recipe?.output?.mat === mat) {
+        buffered += building.output[mat] ?? 0
+      }
+    }
+    const scarce = pending > buffered
+    if (!scarce) continue
+
+    if (sites < MAX_SITES && total < TOTAL_BUILDING_CAP) {
       placeSite(world, env, key, clock)
       return
     }

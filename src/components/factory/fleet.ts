@@ -117,6 +117,7 @@ function finish(world: World, vehicle: Vehicle): void {
   vehicle.pathIndex = 0
   vehicle.pathSpeed = []
   vehicle.loadIndex = -1
+  vehicle.cargo = []
 }
 
 function roadhaulDeposit(world: World, job: Job, vehicle: Vehicle): void {
@@ -163,8 +164,7 @@ export function updateVehicles(world: World, dtMs: number, clock: number): void 
         }
         if (source && source.key === 'warehouse') source.lastUsed = clock
         setCargo(vehicle, job.mat, qty)
-        if (vehicle.pathIndex >= vehicle.path.length) finish(world, vehicle)
-        else vehicle.state = 'toDest'
+        vehicle.state = 'toDest'
       }
       continue
     }

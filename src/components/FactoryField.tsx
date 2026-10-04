@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { mulberry32 } from './factory/geometry'
+import { approach, clamp, mulberry32 } from './factory/geometry'
 import {
   buildStatic,
   createWorld,
@@ -52,10 +52,51 @@ export default function FactoryField({ density = 1, className }: Props) {
     let rafId = 0
     let running = true
     let last = performance.now()
+    let viewScale = 1
+    let viewOffX = 0
+    let viewOffY = 0
+
+    const applyTransforms = () => {
+      const scale = dpr * viewScale
+      sctx.setTransform(scale, 0, 0, scale, dpr * viewOffX, dpr * viewOffY)
+      lctx.setTransform(scale, 0, 0, scale, dpr * viewOffX, dpr * viewOffY)
+    }
+
+    const computeView = () => {
+      const margin = 160
+      let minX = Infinity
+      let minY = Infinity
+      let maxX = -Infinity
+      let maxY = -Infinity
+      for (const building of world.buildings) {
+        minX = Math.min(minX, building.pos.x)
+        minY = Math.min(minY, building.pos.y)
+        maxX = Math.max(maxX, building.pos.x)
+        maxY = Math.max(maxY, building.pos.y)
+      }
+      if (!Number.isFinite(minX)) {
+        minX = 0
+        minY = 0
+        maxX = width
+        maxY = height
+      }
+      const boundsW = Math.max(maxX - minX + margin * 2, width)
+      const boundsH = Math.max(maxY - minY + margin * 2, height)
+      const target = clamp(Math.min(width / boundsW, height / boundsH), 0.3, 1)
+      viewScale = approach(viewScale, target, 0.01)
+      const centerX = (minX + maxX) / 2
+      const centerY = (minY + maxY) / 2
+      viewOffX = width / 2 - centerX * viewScale
+      viewOffY = height / 2 - centerY * viewScale
+      applyTransforms()
+    }
 
     const render = () => {
-      sctx.clearRect(0, 0, width, height)
-      lctx.clearRect(0, 0, width, height)
+      sctx.setTransform(1, 0, 0, 1, 0, 0)
+      lctx.setTransform(1, 0, 0, 1, 0, 0)
+      sctx.clearRect(0, 0, structCanvas.width, structCanvas.height)
+      lctx.clearRect(0, 0, liveCanvas.width, liveCanvas.height)
+      computeView()
 
       sctx.globalCompositeOperation = 'lighter'
       drawAmbient(sctx, world.ambient)
@@ -80,17 +121,30 @@ export default function FactoryField({ density = 1, className }: Props) {
     const reset = () => {
       env.width = width
       env.height = height
+      viewScale = 1
+      viewOffX = 0
+      viewOffY = 0
       world = createWorld({ x: width * 0.46, y: height * 0.54 }, rng)
       resetWorld(world, env, density, clock)
-      sctx.clearRect(0, 0, width, height)
-      lctx.clearRect(0, 0, width, height)
+      sctx.setTransform(1, 0, 0, 1, 0, 0)
+      lctx.setTransform(1, 0, 0, 1, 0, 0)
+      sctx.clearRect(0, 0, structCanvas.width, structCanvas.height)
+      lctx.clearRect(0, 0, liveCanvas.width, liveCanvas.height)
     }
 
     const buildStaticFrame = () => {
       env.width = width
       env.height = height
+      viewScale = 1
+      viewOffX = 0
+      viewOffY = 0
       world = createWorld({ x: width * 0.46, y: height * 0.54 }, rng)
       buildStatic(world, env)
+      sctx.setTransform(1, 0, 0, 1, 0, 0)
+      lctx.setTransform(1, 0, 0, 1, 0, 0)
+      sctx.clearRect(0, 0, structCanvas.width, structCanvas.height)
+      lctx.clearRect(0, 0, liveCanvas.width, liveCanvas.height)
+      computeView()
       drawRoads(sctx, world)
       drawJunctions(sctx, world, 0)
       drawConveyors(sctx, world, 0)
@@ -108,10 +162,10 @@ export default function FactoryField({ density = 1, className }: Props) {
         canvas.width = Math.floor(width * dpr)
         canvas.height = Math.floor(height * dpr)
       }
-      sctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      lctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      sctx.clearRect(0, 0, width, height)
-      lctx.clearRect(0, 0, width, height)
+      sctx.setTransform(1, 0, 0, 1, 0, 0)
+      lctx.setTransform(1, 0, 0, 1, 0, 0)
+      sctx.clearRect(0, 0, structCanvas.width, structCanvas.height)
+      lctx.clearRect(0, 0, liveCanvas.width, liveCanvas.height)
 
       if (reduceMotion) buildStaticFrame()
       else reset()
@@ -132,8 +186,8 @@ export default function FactoryField({ density = 1, className }: Props) {
 
     const onPointerMove = (event: PointerEvent) => {
       const rect = structCanvas.getBoundingClientRect()
-      pointer.x = event.clientX - rect.left
-      pointer.y = event.clientY - rect.top
+      pointer.x = (event.clientX - rect.left - viewOffX) / viewScale
+      pointer.y = (event.clientY - rect.top - viewOffY) / viewScale
     }
     const onPointerLeave = () => {
       pointer.x = Number.NaN

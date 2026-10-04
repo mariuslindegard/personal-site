@@ -61,6 +61,9 @@ export function createWorld(anchor: Pt, rng: () => number): World {
     highways: 0,
     signals: 0,
     warehouseBuilt: false,
+    boundsW0: 0,
+    boundsH0: 0,
+    lastExpandAt: 0,
     topoDirty: true,
     rng,
   }
@@ -127,6 +130,9 @@ export function resetWorld(world: World, env: Env, density: number, clock: numbe
   world.highways = 0
   world.signals = 0
   world.warehouseBuilt = false
+  world.boundsW0 = env.width
+  world.boundsH0 = env.height
+  world.lastExpandAt = 0
   world.topoDirty = true
   world.lastPlanAt = 0
   world.anchor = { x: env.width * 0.46, y: env.height * 0.54 }
